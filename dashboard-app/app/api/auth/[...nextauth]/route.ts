@@ -19,8 +19,8 @@ import type { NextAuthConfig } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import AppleProvider from 'next-auth/providers/apple';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { getUserByEmail, getUserByGoogleId, getUserByAppleId, createUser } from '@/lib/db';
-import { verifyPassword } from '@/lib/auth';
+import { getUserByEmail, getUserByGoogleId, getUserByAppleId, createUser, updateUser } from '@/lib/db';
+import { verifyPassword, validatePasswordStrength } from '@/lib/auth';
 
 // ============================================================================
 // Type Definitions
@@ -131,24 +131,21 @@ export const authConfig: NextAuthConfig = {
           return null;
         }
 
+        // Validate password strength
+        const strengthCheck = validatePasswordStrength(credentials.password as string);
+        if (!strengthCheck.valid) {
+          // Don't expose specific error for security (prevents user enumeration)
+          return null;
+        }
+
         try {
           // Get D1 database instance
           const env = process.env as unknown as { DB?: D1Database };
           const db = env?.DB;
 
           if (!db) {
-            // If D1 is not available, deny sign-in
-            // In development, you might want to allow this for testing
-            if (process.env.NODE_ENV === 'production') {
-              return null;
-            }
-            // For development without D1, allow sign-in with any credentials
-            // Remove this in production!
-            return {
-              id: 'dev-user-id',
-              email: credentials.email as string,
-              name: 'Dev User',
-            };
+            // Database not available - deny sign-in
+            return null;
           }
 
           // Look up user by email
@@ -263,12 +260,8 @@ export const authConfig: NextAuthConfig = {
       const db = env?.DB;
 
       if (!db) {
-        // If D1 is not available (e.g., local dev without wrangler), allow sign-in
-        // In production, this would be an error
-        if (process.env.NODE_ENV === 'production') {
-          return false;
-        }
-        return true;
+        // Database not available - deny sign-in
+        return false;
       }
 
       // Google OAuth sign-in
@@ -289,8 +282,16 @@ export const authConfig: NextAuthConfig = {
         if (existingUser) {
           // User exists with this email but no Google ID
           // Link Google account to existing user
-          // Note: This will be implemented with linkOAuthProvider in a later task
-          // For now, just allow sign-in
+          const linkResult = await updateUser(db, existingUser.id, {
+            google_id: googleId,
+          });
+
+          if (!linkResult.success) {
+            // Failed to link account
+            return false;
+          }
+
+          // Account linked successfully, allow sign-in
           return true;
         }
 
@@ -333,8 +334,16 @@ export const authConfig: NextAuthConfig = {
         if (existingUser) {
           // User exists with this email but no Apple ID
           // Link Apple account to existing user
-          // Note: This will be implemented with linkOAuthProvider in a later task
-          // For now, just allow sign-in
+          const linkResult = await updateUser(db, existingUser.id, {
+            apple_id: appleId,
+          });
+
+          if (!linkResult.success) {
+            // Failed to link account
+            return false;
+          }
+
+          // Account linked successfully, allow sign-in
           return true;
         }
 
