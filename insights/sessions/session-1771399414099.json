@@ -1,0 +1,21 @@
+{
+  "id": "session-1771399414099",
+  "projectId": "cc45b083-26b4-4427-9c6a-04338037f3ab",
+  "title": "merhaba",
+  "messages": [
+    {
+      "id": "msg-1771399414101",
+      "role": "user",
+      "content": "merhaba",
+      "timestamp": "2026-02-18T07:23:34.101Z"
+    },
+    {
+      "id": "msg-1771399439957",
+      "role": "assistant",
+      "content": "API Error: 401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"OAuth token has expired. Please obtain a new token or refresh your existing token.\"},\"request_id\":\"req_011CYF8jnWKGkx5o1jgBtY3k\"} · Please run /login",
+      "timestamp": "2026-02-18T07:23:59.957Z"
+    }
+  ],
+  "createdAt": "2026-02-18T07:23:34.099Z",
+  "updatedAt": "2026-02-18T07:23:59.957Z"
+}
