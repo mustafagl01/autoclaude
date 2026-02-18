@@ -594,6 +594,384 @@ export async function deleteUserSessions(db: D1Database, userId: string): Promis
 }
 
 // ============================================================================
+// Call Table Queries (Cached from Retell AI)
+// ============================================================================
+
+/**
+ * Cache call data from Retell AI to local database
+ *
+ * @param db - D1 database instance
+ * @param callData - Call data from Retell API
+ * @returns Created call record or error
+ */
+export async function cacheCall(
+  db: D1Database,
+  callData: {
+    id: string;
+    user_id: string;
+    phone_number: string;
+    duration?: number | null;
+    status: string;
+    outcome?: string | null;
+    transcript?: string | null;
+    call_date: string;
+  }
+): Promise<DbResult<Call>> {
+  const now = new Date().toISOString();
+
+  // Check if call already exists (upsert logic)
+  const existing = await getCallById(db, callData.id);
+
+  if (existing) {
+    // Update existing call
+    const result = await queryRun(
+      db,
+      `UPDATE calls
+       SET phone_number = ?, duration = ?, status = ?, outcome = ?, transcript = ?, call_date = ?
+       WHERE id = ?`,
+      [
+        callData.phone_number,
+        callData.duration || null,
+        callData.status,
+        callData.outcome || null,
+        callData.transcript || null,
+        callData.call_date,
+        callData.id,
+      ]
+    );
+
+    if (!result.success) {
+      return result as unknown as DbResult<Call>;
+    }
+
+    const updated = await getCallById(db, callData.id);
+    if (!updated) {
+      return {
+        success: false,
+        error: 'Failed to retrieve updated call',
+      };
+    }
+
+    return {
+      success: true,
+      data: updated,
+    };
+  }
+
+  // Insert new call
+  const result = await queryRun(
+    db,
+    `INSERT INTO calls (id, user_id, phone_number, duration, status, outcome, transcript, call_date, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      callData.id,
+      callData.user_id,
+      callData.phone_number,
+      callData.duration || null,
+      callData.status,
+      callData.outcome || null,
+      callData.transcript || null,
+      callData.call_date,
+      now,
+    ]
+  );
+
+  if (!result.success) {
+    return result as unknown as DbResult<Call>;
+  }
+
+  const call = await getCallById(db, callData.id);
+  if (!call) {
+    return {
+      success: false,
+      error: 'Failed to retrieve cached call',
+    };
+  }
+
+  return {
+    success: true,
+    data: call,
+  };
+}
+
+/**
+ * Get call by ID
+ *
+ * @param db - D1 database instance
+ * @param callId - Call ID from Retell
+ * @returns Call record or null if not found
+ */
+export async function getCallById(db: D1Database, callId: string): Promise<Call | null> {
+  const result = await queryFirst<Call>(db, 'SELECT * FROM calls WHERE id = ?', [callId]);
+  return result.success ? result.data || null : null;
+}
+
+/**
+ * Get calls by user ID with pagination
+ *
+ * @param db - D1 database instance
+ * @param userId - User ID
+ * @param limit - Maximum number of calls to return (default: 25)
+ * @param offset - Number of calls to skip (default: 0)
+ * @returns Array of call records
+ */
+export async function getCallsByUserId(
+  db: D1Database,
+  userId: string,
+  limit = 25,
+  offset = 0
+): Promise<DbResult<Call[]>> {
+  return queryAll<Call>(
+    db,
+    `SELECT * FROM calls
+     WHERE user_id = ?
+     ORDER BY call_date DESC
+     LIMIT ? OFFSET ?`,
+    [userId, limit, offset]
+  );
+}
+
+/**
+ * Get calls by date range with optional user filter
+ *
+ * @param db - D1 database instance
+ * @param startDate - Start date (ISO string)
+ * @param endDate - End date (ISO string)
+ * @param userId - Optional user ID to filter by
+ * @param limit - Maximum number of calls to return (default: 100)
+ * @param offset - Number of calls to skip (default: 0)
+ * @returns Array of call records within date range
+ */
+export async function getCallsByDateRange(
+  db: D1Database,
+  startDate: string,
+  endDate: string,
+  userId?: string,
+  limit = 100,
+  offset = 0
+): Promise<DbResult<Call[]>> {
+  let query = `SELECT * FROM calls WHERE call_date >= ? AND call_date <= ?`;
+  const params: unknown[] = [startDate, endDate];
+
+  if (userId) {
+    query += ' AND user_id = ?';
+    params.push(userId);
+  }
+
+  query += ' ORDER BY call_date DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  return queryAll<Call>(db, query, params);
+}
+
+/**
+ * Get calls by status
+ *
+ * @param db - D1 database instance
+ * @param userId - User ID
+ * @param status - Call status (e.g., 'completed', 'missed', 'failed')
+ * @param limit - Maximum number of calls to return (default: 25)
+ * @param offset - Number of calls to skip (default: 0)
+ * @returns Array of call records with specified status
+ */
+export async function getCallsByStatus(
+  db: D1Database,
+  userId: string,
+  status: string,
+  limit = 25,
+  offset = 0
+): Promise<DbResult<Call[]>> {
+  return queryAll<Call>(
+    db,
+    `SELECT * FROM calls
+     WHERE user_id = ? AND status = ?
+     ORDER BY call_date DESC
+     LIMIT ? OFFSET ?`,
+    [userId, status, limit, offset]
+  );
+}
+
+/**
+ * Get calls by outcome
+ *
+ * @param db - D1 database instance
+ * @param userId - User ID
+ * @param outcome - Call outcome (e.g., 'order_placed', 'inquiry', 'complaint')
+ * @param limit - Maximum number of calls to return (default: 25)
+ * @param offset - Number of calls to skip (default: 0)
+ * @returns Array of call records with specified outcome
+ */
+export async function getCallsByOutcome(
+  db: D1Database,
+  userId: string,
+  outcome: string,
+  limit = 25,
+  offset = 0
+): Promise<DbResult<Call[]>> {
+  return queryAll<Call>(
+    db,
+    `SELECT * FROM calls
+     WHERE user_id = ? AND outcome = ?
+     ORDER BY call_date DESC
+     LIMIT ? OFFSET ?`,
+    [userId, outcome, limit, offset]
+  );
+}
+
+/**
+ * Get calls by phone number
+ *
+ * @param db - D1 database instance
+ * @param userId - User ID
+ * @param phoneNumber - Phone number to search for
+ * @param limit - Maximum number of calls to return (default: 25)
+ * @param offset - Number of calls to skip (default: 0)
+ * @returns Array of call records matching phone number
+ */
+export async function getCallsByPhoneNumber(
+  db: D1Database,
+  userId: string,
+  phoneNumber: string,
+  limit = 25,
+  offset = 0
+): Promise<DbResult<Call[]>> {
+  return queryAll<Call>(
+    db,
+    `SELECT * FROM calls
+     WHERE user_id = ? AND phone_number LIKE ?
+     ORDER BY call_date DESC
+     LIMIT ? OFFSET ?`,
+    [userId, `%${phoneNumber}%`, limit, offset]
+  );
+}
+
+/**
+ * Get call metrics for a user
+ *
+ * @param db - D1 database instance
+ * @param userId - User ID
+ * @param startDate - Optional start date for filtering (ISO string)
+ * @param endDate - Optional end date for filtering (ISO string)
+ * @returns Object with call metrics (total, completed, avg duration)
+ */
+export async function getCallMetrics(
+  db: D1Database,
+  userId: string,
+  startDate?: string,
+  endDate?: string
+): Promise<
+  DbResult<{
+    total_calls: number;
+    completed_calls: number;
+    missed_calls: number;
+    failed_calls: number;
+    avg_duration: number;
+    completion_rate: number;
+  }>
+> {
+  try {
+    let dateFilter = '';
+    const params: unknown[] = [userId];
+
+    if (startDate && endDate) {
+      dateFilter = 'AND call_date >= ? AND call_date <= ?';
+      params.push(startDate, endDate);
+    }
+
+    const query = `
+      SELECT
+        COUNT(*) as total_calls,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_calls,
+        SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END) as missed_calls,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_calls,
+        AVG(duration) as avg_duration
+      FROM calls
+      WHERE user_id = ? ${dateFilter}
+    `;
+
+    const result = await queryFirst<{
+      total_calls: number;
+      completed_calls: number;
+      missed_calls: number;
+      failed_calls: number;
+      avg_duration: number;
+    }>(db, query, params);
+
+    if (!result.success || !result.data) {
+      return {
+        success: false,
+        error: 'Failed to query call metrics',
+      };
+    }
+
+    const total = result.data.total_calls || 0;
+    const completionRate = total > 0 ? ((result.data.completed_calls || 0) / total) * 100 : 0;
+
+    return {
+      success: true,
+      data: {
+        total_calls: total,
+        completed_calls: result.data.completed_calls || 0,
+        missed_calls: result.data.missed_calls || 0,
+        failed_calls: result.data.failed_calls || 0,
+        avg_duration: result.data.avg_duration || 0,
+        completion_rate: completionRate,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Delete cached call by ID
+ *
+ * @param db - D1 database instance
+ * @param callId - Call ID to delete
+ * @returns Success status
+ */
+export async function deleteCall(db: D1Database, callId: string): Promise<DbResult<void>> {
+  return queryRun(db, 'DELETE FROM calls WHERE id = ?', [callId]) as unknown as DbResult<void>;
+}
+
+/**
+ * Delete all cached calls for a user
+ *
+ * @param db - D1 database instance
+ * @param userId - User ID
+ * @returns Success status
+ */
+export async function deleteUserCalls(db: D1Database, userId: string): Promise<DbResult<void>> {
+  return queryRun(db, 'DELETE FROM calls WHERE user_id = ?', [userId]) as unknown as DbResult<void>;
+}
+
+/**
+ * Get recent calls for a user (last N calls)
+ *
+ * @param db - D1 database instance
+ * @param userId - User ID
+ * @param count - Number of recent calls to return (default: 10)
+ * @returns Array of most recent call records
+ */
+export async function getRecentCalls(
+  db: D1Database,
+  userId: string,
+  count = 10
+): Promise<DbResult<Call[]>> {
+  return queryAll<Call>(
+    db,
+    `SELECT * FROM calls
+     WHERE user_id = ?
+     ORDER BY call_date DESC
+     LIMIT ?`,
+    [userId, count]
+  );
+}
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 
