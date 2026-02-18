@@ -972,6 +972,197 @@ export async function getRecentCalls(
 }
 
 // ============================================================================
+// Audit Log Queries
+// ============================================================================
+
+/**
+ * Log a security event for a user
+ *
+ * @param db - D1 database instance
+ * @param auditData - Audit event data
+ * @returns Created audit log record or error
+ *
+ * @example
+ * // Log login event
+ * await logAuditEvent(db, {
+ *   user_id: 'user123',
+ *   event_type: 'login',
+ *   ip_address: '192.168.1.1',
+ *   user_agent: 'Mozilla/5.0...'
+ * });
+ */
+export async function logAuditEvent(
+  db: D1Database,
+  auditData: {
+    user_id: string;
+    event_type: string;
+    ip_address?: string | null;
+    user_agent?: string | null;
+  }
+): Promise<DbResult<AuditLog>> {
+  const now = new Date().toISOString();
+  const result = await queryRun(
+    db,
+    'INSERT INTO audit_log (user_id, event_type, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?)',
+    [auditData.user_id, auditData.event_type, auditData.ip_address || null, auditData.user_agent || null, now]
+  );
+
+  if (!result.success) {
+    return result as unknown as DbResult<AuditLog>;
+  }
+
+  // Fetch the created audit log entry using the last insert ID
+  if (result.data?.meta?.last_row_id) {
+    const auditEntry = await queryFirst<AuditLog>(db, 'SELECT * FROM audit_log WHERE id = ?', [
+      result.data.meta.last_row_id,
+    ]);
+
+    if (auditEntry.success && auditEntry.data) {
+      return {
+        success: true,
+        data: auditEntry.data,
+      };
+    }
+  }
+
+  // If we can't retrieve the created entry, still return success
+  return {
+    success: true,
+    data: undefined,
+  };
+}
+
+/**
+ * Get audit log for a specific user with pagination
+ *
+ * @param db - D1 database instance
+ * @param userId - User ID to get audit log for
+ * @param eventType - Optional event type to filter by (e.g., 'login', 'logout', 'password_change')
+ * @param limit - Maximum number of audit entries to return (default: 50)
+ * @param offset - Number of audit entries to skip (default: 0)
+ * @returns Array of audit log entries for the user
+ *
+ * @example
+ * // Get recent login events for a user
+ * const logs = await getUserAuditLog(db, 'user123', 'login', 10, 0);
+ */
+export async function getUserAuditLog(
+  db: D1Database,
+  userId: string,
+  eventType?: string,
+  limit = 50,
+  offset = 0
+): Promise<DbResult<AuditLog[]>> {
+  let query = 'SELECT * FROM audit_log WHERE user_id = ?';
+  const params: unknown[] = [userId];
+
+  if (eventType) {
+    query += ' AND event_type = ?';
+    params.push(eventType);
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  return queryAll<AuditLog>(db, query, params);
+}
+
+/**
+ * Get audit log entries by date range
+ *
+ * @param db - D1 database instance
+ * @param startDate - Start date (ISO string)
+ * @param endDate - End date (ISO string)
+ * @param userId - Optional user ID to filter by
+ * @param eventType - Optional event type to filter by
+ * @param limit - Maximum number of audit entries to return (default: 100)
+ * @param offset - Number of audit entries to skip (default: 0)
+ * @returns Array of audit log entries within date range
+ */
+export async function getAuditLogByDateRange(
+  db: D1Database,
+  startDate: string,
+  endDate: string,
+  userId?: string,
+  eventType?: string,
+  limit = 100,
+  offset = 0
+): Promise<DbResult<AuditLog[]>> {
+  let query = 'SELECT * FROM audit_log WHERE created_at >= ? AND created_at <= ?';
+  const params: unknown[] = [startDate, endDate];
+
+  if (userId) {
+    query += ' AND user_id = ?';
+    params.push(userId);
+  }
+
+  if (eventType) {
+    query += ' AND event_type = ?';
+    params.push(eventType);
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  return queryAll<AuditLog>(db, query, params);
+}
+
+/**
+ * Get audit log entries by event type
+ *
+ * @param db - D1 database instance
+ * @param eventType - Event type to filter by (e.g., 'login', 'logout', 'password_change')
+ * @param limit - Maximum number of audit entries to return (default: 50)
+ * @param offset - Number of audit entries to skip (default: 0)
+ * @returns Array of audit log entries with the specified event type
+ */
+export async function getAuditLogByEventType(
+  db: D1Database,
+  eventType: string,
+  limit = 50,
+  offset = 0
+): Promise<DbResult<AuditLog[]>> {
+  return queryAll<AuditLog>(
+    db,
+    `SELECT * FROM audit_log
+     WHERE event_type = ?
+     ORDER BY created_at DESC
+     LIMIT ? OFFSET ?`,
+    [eventType, limit, offset]
+  );
+}
+
+/**
+ * Delete audit log entries for a user before a specific date
+ * Useful for cleaning up old audit logs while retaining recent ones
+ *
+ * @param db - D1 database instance
+ * @param userId - User ID
+ * @param beforeDate - Delete entries before this date (ISO string)
+ * @returns Number of audit log entries deleted
+ */
+export async function deleteOldAuditLogs(
+  db: D1Database,
+  userId: string,
+  beforeDate: string
+): Promise<DbResult<number>> {
+  const result = await queryRun(
+    db,
+    'DELETE FROM audit_log WHERE user_id = ? AND created_at < ?',
+    [userId, beforeDate]
+  );
+
+  if (result.success && result.data?.meta?.rows !== null) {
+    return {
+      success: true,
+      data: result.data.meta.rows,
+    };
+  }
+
+  return result as unknown as DbResult<number>;
+}
+
+// ============================================================================
 // Utility Functions
 // ============================================================================
 
