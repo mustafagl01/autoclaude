@@ -8,7 +8,7 @@
  * Providers configured:
  * - Google OAuth (complete)
  * - Apple Sign-In (complete)
- * - Email/Password credentials (added in subtask 3-4)
+ * - Email/Password credentials (complete)
  *
  * @see https://authjs.dev/getting-started/installation
  * @see https://next-auth.js.org/
@@ -18,7 +18,9 @@ import NextAuth from 'next-auth';
 import type { NextAuthConfig } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import AppleProvider from 'next-auth/providers/apple';
+import CredentialsProvider from 'next-auth/providers/credentials';
 import { getUserByEmail, getUserByGoogleId, getUserByAppleId, createUser } from '@/lib/db';
+import { verifyPassword } from '@/lib/auth';
 
 // ============================================================================
 // Type Definitions
@@ -47,11 +49,10 @@ export interface AuthSession {
  * This configuration defines:
  * - Google OAuth provider for authentication
  * - Apple Sign-In provider for authentication
+ * - Email/Password credentials provider for authentication
  * - JWT strategy for session management
  * - Custom callbacks for user lookup and creation
  * - Custom pages for login
- *
- * Credentials provider will be added in subsequent task 3-4.
  */
 export const authConfig: NextAuthConfig = {
   // ----------------------------------------------------------------------------
@@ -92,7 +93,106 @@ export const authConfig: NextAuthConfig = {
         keyId: process.env.APPLE_KEY_ID || '',
       },
     }),
-    // Credentials provider will be added in subtask 3-4
+    /**
+     * Email/Password credentials provider
+     *
+     * Users can sign in with their email and password.
+     * Passwords are verified against bcrypt hashes stored in D1 database.
+     *
+     * New user registration is handled separately (not through this provider).
+     * This provider is for existing users to sign in.
+     *
+     * @see https://next-auth.js.org/providers/credentials
+     */
+    CredentialsProvider({
+      name: 'credentials',
+      credentials: {
+        email: {
+          label: 'Email',
+          type: 'email',
+          placeholder: 'user@example.com',
+        },
+        password: {
+          label: 'Password',
+          type: 'password',
+        },
+      },
+      /**
+       * Authorize function for credentials provider
+       *
+       * This function is called when a user attempts to sign in with email/password.
+       * It validates the credentials against the D1 database.
+       *
+       * @param credentials - Email and password from login form
+       * @returns User object if credentials are valid, null otherwise
+       */
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          return null;
+        }
+
+        try {
+          // Get D1 database instance
+          const env = process.env as unknown as { DB?: D1Database };
+          const db = env?.DB;
+
+          if (!db) {
+            // If D1 is not available, deny sign-in
+            // In development, you might want to allow this for testing
+            if (process.env.NODE_ENV === 'production') {
+              return null;
+            }
+            // For development without D1, allow sign-in with any credentials
+            // Remove this in production!
+            return {
+              id: 'dev-user-id',
+              email: credentials.email as string,
+              name: 'Dev User',
+            };
+          }
+
+          // Look up user by email
+          const user = await getUserByEmail(db, credentials.email as string);
+
+          if (!user) {
+            // User not found
+            return null;
+          }
+
+          // Check if user has a password hash
+          // OAuth-only users (Google/Apple) will have null password_hash
+          if (!user.password_hash) {
+            // User exists but doesn't have a password
+            // They need to sign in with OAuth or set a password
+            return null;
+          }
+
+          // Verify password against hash
+          const verifyResult = await verifyPassword(
+            credentials.password as string,
+            user.password_hash
+          );
+
+          if (!verifyResult.success || !verifyResult.valid) {
+            // Invalid password
+            return null;
+          }
+
+          // Credentials are valid, return user object
+          // This will be attached to the JWT token
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            image: user.image,
+          };
+        } catch (error) {
+          // Log error but don't expose details to user
+          // In production, this should be logged to error tracking service
+          return null;
+        }
+      },
+    }),
   ],
 
   // ----------------------------------------------------------------------------
@@ -259,7 +359,8 @@ export const authConfig: NextAuthConfig = {
         return true;
       }
 
-      // Other providers will be handled in subsequent tasks (Credentials in subtask 3-4)
+      // Credentials provider doesn't go through signIn callback
+      // It returns user object directly from authorize function
       return false;
     } catch (error) {
       // Log error but don't expose details to user
