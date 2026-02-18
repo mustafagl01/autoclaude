@@ -5,6 +5,11 @@
  * Multi-provider authentication configuration for Next.js App Router.
  * Supports Google OAuth, Apple Sign-In, and email/password credentials.
  *
+ * Providers configured:
+ * - Google OAuth (complete)
+ * - Apple Sign-In (complete)
+ * - Email/Password credentials (added in subtask 3-4)
+ *
  * @see https://authjs.dev/getting-started/installation
  * @see https://next-auth.js.org/
  */
@@ -12,7 +17,8 @@
 import NextAuth from 'next-auth';
 import type { NextAuthConfig } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
-import { getUserByEmail, getUserByGoogleId, createUser } from '@/lib/db';
+import AppleProvider from 'next-auth/providers/apple';
+import { getUserByEmail, getUserByGoogleId, getUserByAppleId, createUser } from '@/lib/db';
 
 // ============================================================================
 // Type Definitions
@@ -40,11 +46,12 @@ export interface AuthSession {
  *
  * This configuration defines:
  * - Google OAuth provider for authentication
+ * - Apple Sign-In provider for authentication
  * - JWT strategy for session management
  * - Custom callbacks for user lookup and creation
  * - Custom pages for login
  *
- * Additional providers (Apple, Credentials) will be added in subsequent tasks.
+ * Credentials provider will be added in subsequent task 3-4.
  */
 export const authConfig: NextAuthConfig = {
   // ----------------------------------------------------------------------------
@@ -66,7 +73,25 @@ export const authConfig: NextAuthConfig = {
       // Allow authorization in HTTP for local development
       allowDangerousEmailAccountLinking: false,
     }),
-    // Apple Sign-In provider will be added in subtask 3-3
+    /**
+     * Apple Sign-In provider
+     *
+     * Users can sign in with their Apple ID.
+     * On first sign-in, a user record is created in the D1 database.
+     *
+     * Apple Sign-In requires JWT verification using private key and team ID.
+     *
+     * @see https://developer.apple.com/sign-in-with-apple/ - Get credentials
+     */
+    AppleProvider({
+      clientId: process.env.APPLE_ID || '',
+      clientSecret: {
+        appleId: process.env.APPLE_ID || '',
+        teamId: process.env.APPLE_TEAM_ID || '',
+        privateKey: process.env.APPLE_PRIVATE_KEY || '',
+        keyId: process.env.APPLE_KEY_ID || '',
+      },
+    }),
     // Credentials provider will be added in subtask 3-4
   ],
 
@@ -190,8 +215,51 @@ export const authConfig: NextAuthConfig = {
         return true;
       }
 
-      // Other providers will be handled in subsequent tasks
-      // For now, only Google is supported
+      // Apple Sign-In
+      if (account?.provider === 'apple') {
+        const appleId = account.providerAccountId;
+
+        // Check if user exists by Apple ID
+        let existingUser = await getUserByAppleId(db, appleId);
+
+        if (existingUser) {
+          // User exists with this Apple ID, allow sign-in
+          return true;
+        }
+
+        // Check if user exists by email (account merging scenario)
+        existingUser = await getUserByEmail(db, user.email);
+
+        if (existingUser) {
+          // User exists with this email but no Apple ID
+          // Link Apple account to existing user
+          // Note: This will be implemented with linkOAuthProvider in a later task
+          // For now, just allow sign-in
+          return true;
+        }
+
+        // Create new user
+        const userId = crypto.randomUUID();
+        const createResult = await createUser(db, {
+          id: userId,
+          email: user.email,
+          name: user.name || user.email.split('@')[0],
+          image: user.image || null,
+          apple_id: appleId,
+          // No password for OAuth users
+          password_hash: null,
+        });
+
+        if (!createResult.success) {
+          // Failed to create user, deny sign-in
+          return false;
+        }
+
+        // New user created successfully
+        return true;
+      }
+
+      // Other providers will be handled in subsequent tasks (Credentials in subtask 3-4)
       return false;
     } catch (error) {
       // Log error but don't expose details to user
