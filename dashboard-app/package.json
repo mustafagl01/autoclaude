@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "build:cf": "npm run build && npx @cloudflare/next-on-pages",
+    "build": "next build && npx @cloudflare/next-on-pages",
+    "build:cf": "npm run build",
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
