@@ -255,6 +255,66 @@ export async function getCallsByUserId(
   }
 }
 
+export async function getCallsByDateRange(
+  userId: string,
+  startDate: string,
+  endDate: string,
+  limit = 100,
+  offset = 0
+): Promise<DbResult<Call[]>> {
+  try {
+    const { rows } = await sql<Call>`
+      SELECT * FROM calls
+      WHERE user_id = ${userId}
+        AND call_date >= ${startDate}
+        AND call_date <= ${endDate}
+      ORDER BY call_date DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    return { success: true, data: rows };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function getCallsByStatus(
+  userId: string,
+  status: string,
+  limit = 25,
+  offset = 0
+): Promise<DbResult<Call[]>> {
+  try {
+    const { rows } = await sql<Call>`
+      SELECT * FROM calls
+      WHERE user_id = ${userId} AND status = ${status}
+      ORDER BY call_date DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    return { success: true, data: rows };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function getCallsByPhoneNumber(
+  userId: string,
+  phoneNumber: string,
+  limit = 25,
+  offset = 0
+): Promise<DbResult<Call[]>> {
+  try {
+    const { rows } = await sql<Call>`
+      SELECT * FROM calls
+      WHERE user_id = ${userId} AND phone_number LIKE ${'%' + phoneNumber + '%'}
+      ORDER BY call_date DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    return { success: true, data: rows };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
 export async function getRecentCalls(userId: string, count = 10): Promise<DbResult<Call[]>> {
   try {
     const { rows } = await sql<Call>`
