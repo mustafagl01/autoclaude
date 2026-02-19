@@ -1,17 +1,15 @@
 /**
- * NextAuth.js v5 Configuration
+ * NextAuth.js v5 Configuration (Vercel Postgres version)
  * UK Takeaway Phone Order Assistant Dashboard
  *
- * Multi-provider authentication configuration for Next.js App Router.
- * Supports Google OAuth, Apple Sign-In, and email/password credentials.
+ * Supports:
+ * - Google OAuth
+ * - Apple Sign-In
+ * - Email/Password (Credentials)
  *
- * Providers configured:
- * - Google OAuth (complete)
- * - Apple Sign-In (complete)
- * - Email/Password credentials (complete)
- *
- * @see https://authjs.dev/getting-started/installation
- * @see https://next-auth.js.org/
+ * NOTE:
+ * - Cloudflare D1 usage removed (no process.env.DB)
+ * - Uses @vercel/postgres-backed functions in /lib/db.ts (no db param)
  */
 
 import NextAuth from 'next-auth';
@@ -19,22 +17,249 @@ import type { NextAuthConfig } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import AppleProvider from 'next-auth/providers/apple';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { getUserByEmail, getUserByGoogleId, getUserByAppleId, createUser, updateUser } from '@/lib/db';
+
+import {
+  getUserByEmail,
+  getUserByGoogleId,
+  getUserByAppleId,
+  createUser,
+  updateUser,
+} from '@/lib/db';
+
 import { verifyPassword, validatePasswordStrength } from '@/lib/auth';
 
 // ============================================================================
 // Type Definitions
 // ============================================================================
 
-/**
- * Extended session type with database user ID
- */
 export interface AuthSession {
   user: {
     id?: string;
     email?: string | null;
     name?: string | null;
     image?: string | null;
+  };
+  expires: string;
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function requireEnv(name: string): string {
+  const v = process.env[name];
+  if (!v || v.trim() === '') throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+function hasEnv(name: string): boolean {
+  const v = process.env[name];
+  return !!v && v.trim() !== '';
+}
+
+// ============================================================================
+// NextAuth Configuration
+// ============================================================================
+
+export const authConfig: NextAuthConfig = {
+  providers: [
+    // Only register providers when env vars exist.
+    // This avoids provider init crashes in production when secrets are missing.
+    ...(hasEnv('GOOGLE_CLIENT_ID') && hasEnv('GOOGLE_CLIENT_SECRET')
+      ? [
+          GoogleProvider({
+            clientId: requireEnv('GOOGLE_CLIENT_ID'),
+            clientSecret: requireEnv('GOOGLE_CLIENT_SECRET'),
+            allowDangerousEmailAccountLinking: false,
+          }),
+        ]
+      : []),
+
+    ...(hasEnv('APPLE_ID') &&
+    hasEnv('APPLE_TEAM_ID') &&
+    hasEnv('APPLE_PRIVATE_KEY') &&
+    hasEnv('APPLE_KEY_ID')
+      ? [
+          AppleProvider({
+            clientId: requireEnv('APPLE_ID'),
+            clientSecret: {
+              appleId: requireEnv('APPLE_ID'),
+              teamId: requireEnv('APPLE_TEAM_ID'),
+              privateKey: requireEnv('APPLE_PRIVATE_KEY').replace(/\
+/g, '
+'),
+              keyId: requireEnv('APPLE_KEY_ID'),
+            },
+          }),
+        ]
+      : []),
+
+    CredentialsProvider({
+      name: 'credentials',
+      credentials: {
+        email: { label: 'Email', type: 'email', placeholder: 'user@example.com' },
+        password: { label: 'Password', type: 'password' },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) return null;
+
+        // Keep your existing rule (though note: some apps validate strength at signup, not login)
+        const strengthCheck = validatePasswordStrength(credentials.password as string);
+        if (!strengthCheck.valid) return null;
+
+        try {
+          const user = await getUserByEmail(credentials.email as string);
+
+          if (!user) return null;
+          if (!user.password_hash) return null;
+
+          const verifyResult = await verifyPassword(
+            credentials.password as string,
+            user.password_hash
+          );
+
+          if (!verifyResult.success || !verifyResult.valid) return null;
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            image: user.image,
+          };
+        } catch {
+          return null;
+        }
+      },
+    }),
+  ],
+
+  session: {
+    strategy: 'jwt',
+    maxAge: 30 * 24 * 60 * 60,
+  },
+
+  pages: {
+    signIn: '/login',
+    error: '/login',
+  },
+
+  callbacks: {
+    async signIn({ user, account }) {
+      if (!user.email) return false;
+
+      try {
+        // Google OAuth sign-in
+        if (account?.provider === 'google') {
+          const googleId = account.providerAccountId;
+
+          let existingUser = await getUserByGoogleId(googleId);
+          if (existingUser) return true;
+
+          existingUser = await getUserByEmail(user.email);
+          if (existingUser) {
+            const linkResult = await updateUser(existingUser.id, { google_id: googleId });
+            return !!linkResult.success;
+          }
+
+          const userId = crypto.randomUUID();
+          const createResult = await createUser({
+            id: userId,
+            email: user.email,
+            name: user.name || user.email.split('@')[0],
+            image: user.image || null,
+            google_id: googleId,
+            password_hash: null,
+          });
+
+          return !!createResult.success;
+        }
+
+        // Apple OAuth sign-in
+        if (account?.provider === 'apple') {
+          const appleId = account.providerAccountId;
+
+          let existingUser = await getUserByAppleId(appleId);
+          if (existingUser) return true;
+
+          existingUser = await getUserByEmail(user.email);
+          if (existingUser) {
+            const linkResult = await updateUser(existingUser.id, { apple_id: appleId });
+            return !!linkResult.success;
+          }
+
+          const userId = crypto.randomUUID();
+          const createResult = await createUser({
+            id: userId,
+            email: user.email,
+            name: user.name || user.email.split('@')[0],
+            image: user.image || null,
+            apple_id: appleId,
+            password_hash: null,
+          });
+
+          return !!createResult.success;
+        }
+
+        // Credentials provider: allow (authorize already verified and returned user)
+        if (account?.provider === 'credentials') return true;
+
+        // Unknown provider
+        return false;
+      } catch {
+        return false;
+      }
+    },
+
+    async jwt({ token, user, account }) {
+      // On initial sign-in, attach DB user ID to token
+      if (user && account && user.email) {
+        try {
+          const dbUser = await getUserByEmail(user.email);
+          if (dbUser) {
+            (token as any).userId = dbUser.id;
+            token.email = dbUser.email;
+            token.name = dbUser.name;
+            token.picture = dbUser.image ?? undefined;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return token;
+    },
+
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.id = (token as any).userId as string;
+      }
+      return session;
+    },
+  },
+
+  debug:
+    process.env.NODE_ENV === 'development' && process.env.NEXTAUTH_DEBUG === 'true',
+
+  secret: process.env.NEXTAUTH_SECRET,
+};
+
+// ============================================================================
+// NextAuth Route Handlers
+// ============================================================================
+
+export const runtime = 'nodejs';
+
+export function GET(request: Request) {
+  return NextAuth(authConfig)(request);
+}
+
+export function POST(request: Request) {
+  return NextAuth(authConfig)(request);
+}
+
+export async function auth() {
+  const handler = NextAuth(authConfig) as unknown as { auth: () => Promise<unknown> };
+  return handler.auth();
+}    image?: string | null;
   };
   expires: string;
 }
