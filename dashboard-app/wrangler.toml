@@ -6,12 +6,14 @@ compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
 
+# --- Genel Değişkenler ---
+[vars]
+NEXTAUTH_URL = "https://takeaway-dashboard.pages.dev"
+
 # --- Preview (Test) Ortamı ---
-# Cloudflare "dev" kabul etmez, o yüzden ismini "preview" yaptık.
 [env.preview]
 name = "takeaway-dashboard-preview"
 
-# Veritabanı bağlantısı - Preview
 [[env.preview.d1_databases]]
 binding = "DB"
 database_name = "takeaway-dashboard"
@@ -21,15 +23,7 @@ database_id = "f77dc444-2dba-4631-bcb1-e8973e959dbb"
 [env.production]
 name = "takeaway-dashboard-prod"
 
-# Veritabanı bağlantısı - Production
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "takeaway-dashboard"
 database_id = "f77dc444-2dba-4631-bcb1-e8973e959dbb"
-
-# --- Değişkenler ---
-[env.production.vars]
-NEXTAUTH_URL = "https://takeaway-dashboard.pages.dev"
-
-[env.preview.vars]
-NEXTAUTH_URL = "https://takeaway-dashboard.pages.dev"
