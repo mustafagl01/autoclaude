@@ -10,8 +10,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authConfig } from '@/app/api/auth/[...nextauth]/route';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
+
 import { listTools, type McpTool } from '@/lib/n8n-mcp';
 
 // ============================================================================
@@ -131,12 +131,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   /**
    * Verify user is authenticated
    *
-   * Uses getServerSession() to validate the NextAuth JWT token.
+   * Uses auth() to validate the NextAuth JWT token.
    * If no valid session exists, returns 401 Unauthorized.
    *
    * @see https://next-auth.js.org/configuration/nextjs#getserversession
    */
-  const session = await getServerSession(authConfig);
+  const session = await auth();
 
   if (!session || !session.user) {
     return NextResponse.json(
@@ -272,3 +272,4 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
  * @see https://nextjs.org/docs/app/building-your-application/rendering/edge-and-nodejs-runtimes
  */
 export const runtime = 'edge';
+

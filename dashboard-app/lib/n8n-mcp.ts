@@ -126,7 +126,6 @@ function getMcpClient(): unknown {
   try {
     // Dynamic import of MCP SDK
     const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
-    const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
 
     // Note: For HTTP-based MCP servers (like supergateway), we would typically use
     // a different transport. However, the exact implementation depends on how

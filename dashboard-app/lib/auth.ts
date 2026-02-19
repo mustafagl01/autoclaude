@@ -2,249 +2,169 @@
  * Authentication Utilities
  * UK Takeaway Phone Order Assistant Dashboard
  *
- * Provides password hashing and verification functions using bcrypt.
- * All passwords are hashed with a cost factor of 12 for security.
+ * Edge-safe password hashing/verification using Web Crypto PBKDF2.
  */
 
-import * as bcrypt from 'bcrypt';
-
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-/**
- * Result of a password hashing operation
- */
 export interface HashResult {
   success: boolean;
   hash?: string;
   error?: string;
 }
 
-/**
- * Result of a password verification operation
- */
 export interface VerifyResult {
   success: boolean;
   valid?: boolean;
   error?: string;
 }
 
-// ============================================================================
-// Constants
-// ============================================================================
+const PBKDF2_ITERATIONS = 210000;
+const PBKDF2_KEY_LENGTH = 32;
+const SALT_LENGTH = 16;
+const HASH_PREFIX = "pbkdf2_sha256";
 
-/**
- * bcrypt cost factor (number of rounds)
- * Higher values are more secure but slower. 12 is a good balance for security and performance.
- * Each increment doubles the time required to hash.
- */
-const BCRYPT_COST_FACTOR = 12;
+const encoder = new TextEncoder();
 
-// ============================================================================
-// Password Hashing & Verification
-// ============================================================================
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof btoa === "function") {
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary);
+  }
+  return Buffer.from(bytes).toString("base64");
+}
 
-/**
- * Hash a plain text password using bcrypt
- *
- * @param password - Plain text password to hash
- * @returns Hashed password or error
- *
- * @example
- * const result = await hashPassword('mySecurePassword123');
- * if (result.success && result.hash) {
- *   // Store result.hash in database
- *   await createUser(db, { email, password_hash: result.hash, ... });
- * }
- */
+function base64ToBytes(base64: string): Uint8Array {
+  if (typeof atob === "function") {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+  return new Uint8Array(Buffer.from(base64, "base64"));
+}
+
+function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+async function deriveKey(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
+  const keyMaterial = await crypto.subtle.importKey("raw", encoder.encode(password), { name: "PBKDF2" }, false, [
+    "deriveBits",
+  ]);
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      salt,
+      iterations,
+    },
+    keyMaterial,
+    PBKDF2_KEY_LENGTH * 8
+  );
+  return new Uint8Array(bits);
+}
+
+function formatHash(iterations: number, salt: Uint8Array, hash: Uint8Array): string {
+  return `${HASH_PREFIX}$${iterations}$${bytesToBase64(salt)}$${bytesToBase64(hash)}`;
+}
+
+function parseHash(storedHash: string): { iterations: number; salt: Uint8Array; hash: Uint8Array } | null {
+  const parts = storedHash.split("$");
+  if (parts.length !== 4 || parts[0] !== HASH_PREFIX) return null;
+
+  const iterations = Number.parseInt(parts[1], 10);
+  if (!Number.isFinite(iterations) || iterations <= 0) return null;
+
+  try {
+    return {
+      iterations,
+      salt: base64ToBytes(parts[2]),
+      hash: base64ToBytes(parts[3]),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function hashPassword(password: string): Promise<HashResult> {
   try {
-    // Validate input
-    if (!password || typeof password !== 'string') {
-      return {
-        success: false,
-        error: 'Password must be a non-empty string',
-      };
+    if (!password || typeof password !== "string") {
+      return { success: false, error: "Password must be a non-empty string" };
     }
-
-    // Check minimum password length
     if (password.length < 8) {
-      return {
-        success: false,
-        error: 'Password must be at least 8 characters long',
-      };
+      return { success: false, error: "Password must be at least 8 characters long" };
     }
 
-    // Hash the password with bcrypt
-    const hash = await bcrypt.hash(password, BCRYPT_COST_FACTOR);
+    const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+    const hash = await deriveKey(password, salt, PBKDF2_ITERATIONS);
 
     return {
       success: true,
-      hash,
+      hash: formatHash(PBKDF2_ITERATIONS, salt, hash),
     };
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred while hashing password',
+      error: error instanceof Error ? error.message : "Unknown error occurred while hashing password",
     };
   }
 }
 
-/**
- * Verify a plain text password against a bcrypt hash
- *
- * @param password - Plain text password to verify
- * @param hash - Stored bcrypt hash to compare against
- * @returns Verification result or error
- *
- * @example
- * const user = await getUserByEmail(db, 'user@example.com');
- * if (user?.password_hash) {
- *   const result = await verifyPassword('inputPassword', user.password_hash);
- *   if (result.success && result.valid) {
- *     // Password is correct, authenticate user
- *   }
- * }
- */
 export async function verifyPassword(password: string, hash: string): Promise<VerifyResult> {
   try {
-    // Validate inputs
-    if (!password || typeof password !== 'string') {
-      return {
-        success: false,
-        error: 'Password must be a non-empty string',
-      };
+    if (!password || typeof password !== "string") {
+      return { success: false, error: "Password must be a non-empty string" };
+    }
+    if (!hash || typeof hash !== "string") {
+      return { success: false, error: "Hash must be a non-empty string" };
     }
 
-    if (!hash || typeof hash !== 'string') {
-      return {
-        success: false,
-        error: 'Hash must be a non-empty string',
-      };
-    }
+    const parsed = parseHash(hash);
+    if (!parsed) return { success: true, valid: false };
 
-    // Compare password with hash
-    const isValid = await bcrypt.compare(password, hash);
-
+    const computed = await deriveKey(password, parsed.salt, parsed.iterations);
     return {
       success: true,
-      valid: isValid,
+      valid: timingSafeEqual(computed, parsed.hash),
     };
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred while verifying password',
+      error: error instanceof Error ? error.message : "Unknown error occurred while verifying password",
     };
   }
 }
 
-/**
- * Check if a password needs to be rehashed (e.g., when increasing cost factor)
- *
- * @param hash - Existing bcrypt hash
- * @returns true if the hash should be updated with a new cost factor
- *
- * @example
- * const user = await getUserByEmail(db, 'user@example.com');
- * if (user?.password_hash && needsRehash(user.password_hash)) {
- *   // Rehash password with current cost factor
- *   const newHash = await hashPassword(newPassword);
- *   if (newHash.success && newHash.hash) {
- *     await updateUser(db, user.id, { password_hash: newHash.hash });
- *   }
- * }
- */
 export function needsRehash(hash: string): boolean {
-  try {
-    // Extract cost factor from hash (bcrypt hashes start with $2a$, $2b$, or $2y$)
-    // Format: $2a$[cost]$[salt][hash]
-    const match = hash.match(/^\$2[aby]\$(\d+)\$/);
-    if (!match) {
-      return false; // Invalid hash format, don't rehash
-    }
-
-    const currentCost = parseInt(match[1], 10);
-    return currentCost < BCRYPT_COST_FACTOR;
-  } catch {
-    return false;
-  }
+  const parsed = parseHash(hash);
+  if (!parsed) return true;
+  return parsed.iterations < PBKDF2_ITERATIONS;
 }
 
-/**
- * Validate password strength before hashing
- *
- * @param password - Plain text password to validate
- * @returns Object with validation result and error message if invalid
- *
- * Password requirements:
- * - Minimum 8 characters
- * - At least one lowercase letter
- * - At least one uppercase letter
- * - At least one number
- * - At least one special character
- *
- * @example
- * const validation = validatePasswordStrength('MyP@ssw0rd');
- * if (!validation.valid) {
- *   return res.status(400).json({ error: validation.error });
- * }
- */
 export function validatePasswordStrength(password: string): { valid: boolean; error?: string } {
-  if (!password || typeof password !== 'string') {
-    return {
-      valid: false,
-      error: 'Password is required',
-    };
+  if (!password || typeof password !== "string") {
+    return { valid: false, error: "Password is required" };
   }
-
   if (password.length < 8) {
-    return {
-      valid: false,
-      error: 'Password must be at least 8 characters long',
-    };
+    return { valid: false, error: "Password must be at least 8 characters long" };
   }
-
   if (password.length > 128) {
-    return {
-      valid: false,
-      error: 'Password must not exceed 128 characters',
-    };
+    return { valid: false, error: "Password must not exceed 128 characters" };
   }
-
-  // Check for at least one lowercase letter
   if (!/[a-z]/.test(password)) {
-    return {
-      valid: false,
-      error: 'Password must contain at least one lowercase letter',
-    };
+    return { valid: false, error: "Password must contain at least one lowercase letter" };
   }
-
-  // Check for at least one uppercase letter
   if (!/[A-Z]/.test(password)) {
-    return {
-      valid: false,
-      error: 'Password must contain at least one uppercase letter',
-    };
+    return { valid: false, error: "Password must contain at least one uppercase letter" };
   }
-
-  // Check for at least one number
   if (!/[0-9]/.test(password)) {
-    return {
-      valid: false,
-      error: 'Password must contain at least one number',
-    };
+    return { valid: false, error: "Password must contain at least one number" };
   }
-
-  // Check for at least one special character
-  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-    return {
-      valid: false,
-      error: 'Password must contain at least one special character',
-    };
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(password)) {
+    return { valid: false, error: "Password must contain at least one special character" };
   }
-
-  return {
-    valid: true,
-  };
+  return { valid: true };
 }

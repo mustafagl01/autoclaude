@@ -9,9 +9,9 @@
  * @see /lib/db.ts - Database query functions
  */
 
-import { getServerSession } from 'next-auth';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
 import { redirect } from 'next/navigation';
-import { authConfig } from '@/app/api/auth/[...nextauth]/route';
+
 import { getDb, getCallMetrics, getRecentCalls, type Call } from '@/lib/db';
 
 // ============================================================================
@@ -56,7 +56,7 @@ interface DashboardMetrics {
  */
 export default async function DashboardPage() {
   // Get current session (authentication check)
-  const session = await getServerSession(authConfig);
+  const session = await auth();
 
   // Redirect unauthenticated users to login
   if (!session || !session.user?.id) {
@@ -366,3 +366,4 @@ function EmptyState({ message }: EmptyStateProps) {
     </div>
   );
 }
+

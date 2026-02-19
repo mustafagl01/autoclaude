@@ -21,8 +21,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authConfig } from '@/app/api/auth/[...nextauth]/route';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
+
 import { getDb, getCallsByUserId, getCallsByDateRange, getCallsByStatus, getCallsByPhoneNumber, type Call } from '@/lib/db';
 
 // ============================================================================
@@ -99,7 +99,7 @@ interface CallQueryParams {
 export async function GET(request: NextRequest) {
   try {
     // Check authentication
-    const session = await getServerSession(authConfig);
+    const session = await auth();
 
     if (!session || !session.user?.id) {
       return NextResponse.json(
@@ -225,3 +225,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+

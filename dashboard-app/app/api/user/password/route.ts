@@ -11,8 +11,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authConfig } from '@/app/api/auth/[...nextauth]/route';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
+
 import { getDb, getUserById, updateUser, type DbResult, type User } from '@/lib/db';
 import { hashPassword, verifyPassword, type HashResult, type VerifyResult } from '@/lib/auth';
 
@@ -70,7 +70,7 @@ interface ChangePasswordResponse {
 export async function POST(request: NextRequest) {
   try {
     // Get current session (authentication check)
-    const session = await getServerSession(authConfig);
+    const session = await auth();
 
     // Return 401 if no valid session
     if (!session || !session.user?.id) {
@@ -196,3 +196,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

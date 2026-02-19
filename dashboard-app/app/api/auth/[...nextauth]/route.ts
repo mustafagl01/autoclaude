@@ -510,3 +510,8 @@ export function GET(request: Request) {
 export function POST(request: Request) {
   return NextAuth(authConfig)(request);
 }
+
+export async function auth() {
+  const handler = NextAuth(authConfig) as unknown as { auth: () => Promise<unknown> };
+  return handler.auth();
+}

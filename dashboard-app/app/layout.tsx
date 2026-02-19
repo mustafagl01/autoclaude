@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
-import { getServerSession } from 'next-auth'
+import { auth } from '@/app/api/auth/[...nextauth]/route'
 import './globals.css'
 import Providers from './providers'
 import Navbar from '@/components/Navbar'
@@ -28,7 +28,7 @@ export default async function RootLayout({
   children: React.ReactNode
 }) {
   // Get server session for authentication state
-  const session = await getServerSession()
+  const session = await auth()
 
   return (
     <html lang="en" suppressHydrationWarning>

@@ -25,8 +25,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authConfig } from '@/app/api/auth/[...nextauth]/route';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
+
 import { getDb, getCallsByDateRange, type Call } from '@/lib/db';
 
 // ============================================================================
@@ -81,7 +81,7 @@ interface AnalyticsResponseData {
 export async function GET(request: NextRequest) {
   try {
     // Get current session (authentication check)
-    const session = await getServerSession(authConfig);
+    const session = await auth();
 
     // Return 401 if not authenticated
     if (!session || !session.user?.id) {
@@ -198,3 +198,4 @@ export async function GET(request: NextRequest) {
  * Edge runtime configuration for Cloudflare Workers compatibility
  */
 export const runtime = 'edge';
+

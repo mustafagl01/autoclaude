@@ -10,9 +10,9 @@
  * @see /components/CallList.tsx - Client component with filters and pagination
  */
 
-import { getServerSession } from 'next-auth';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
 import { redirect } from 'next/navigation';
-import { authConfig } from '@/app/api/auth/[...nextauth]/route';
+
 import { getDb, getCallsByUserId, type Call } from '@/lib/db';
 import CallList from '@/components/CallList';
 
@@ -42,7 +42,7 @@ import CallList from '@/components/CallList';
  */
 export default async function CallsListPage() {
   // Get current session (authentication check)
-  const session = await getServerSession(authConfig);
+  const session = await auth();
 
   // Redirect unauthenticated users to login
   if (!session || !session.user?.id) {
@@ -97,3 +97,4 @@ export default async function CallsListPage() {
     </div>
   );
 }
+

@@ -15,9 +15,9 @@
  * @see /lib/retell.ts - Retell SDK client wrapper
  */
 
-import { getServerSession } from 'next-auth';
+import { auth } from '@/app/api/auth/[...nextauth]/route';
 import { redirect } from 'next/navigation';
-import { authConfig } from '@/app/api/auth/[...nextauth]/route';
+
 import { getDb, getCallById, type Call } from '@/lib/db';
 import { getCallDetails, type RetellCallDetails } from '@/lib/retell';
 import Link from 'next/link';
@@ -100,7 +100,7 @@ export default async function CallDetailsPage({
   params: { id: string };
 }) {
   // Get current session (authentication check)
-  const session = await getServerSession(authConfig);
+  const session = await auth();
 
   // Redirect unauthenticated users to login
   if (!session || !session.user?.id) {
@@ -597,3 +597,4 @@ function parseTranscript(transcript: string): TranscriptSegment[] {
 
   return segments;
 }
+
