@@ -1,0 +1,41 @@
+# Cloudflare Workers/Pages Configuration
+# For UK Takeaway Phone Order Assistant Dashboard
+
+name = "takeaway-dashboard"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare Pages configuration for Next.js
+pages_build_output_dir = ".vercel/output/static"
+
+# D1 Database Binding
+[[d1_databases]]
+binding = "DB"
+database_name = "takeaway-dashboard"
+database_id = "YOUR_D1_DATABASE_ID"  # Replace with actual database_id after running: wrangler d1 create takeaway-dashboard
+
+# Environment Variables (secrets should be set via: wrangler secret put <KEYNAME>)
+# Note: Never commit actual secrets to git. Use .dev.vars for local development.
+
+# NextAuth Configuration
+[vars]
+NEXTAUTH_URL = "http://localhost:3000"
+
+# Production environment variables
+# Set these secrets in production using: wrangler secret put <KEYNAME>
+# NEXTAUTH_SECRET
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# APPLE_ID
+# APPLE_TEAM_ID
+# APPLE_PRIVATE_KEY
+# APPLE_KEY_ID
+# RETELL_API_KEY
+# MCP_AUTH_TOKEN
+
+# Development vs Production environments
+[env.dev]
+name = "takeaway-dashboard-dev"
+
+[env.production]
+name = "takeaway-dashboard-prod"
