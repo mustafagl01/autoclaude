@@ -5,7 +5,7 @@
     "scripts":  {
                     "dev":  "next dev",
                     "build":  "next build",
-                    "build:cf":  "next build && npx @cloudflare/next-on-pages",
+                    "build:cf":  "next build && npx @cloudflare/next-on-pages --skip-build",
                     "start":  "next start",
                     "lint":  "next lint",
                     "test":  "jest",
