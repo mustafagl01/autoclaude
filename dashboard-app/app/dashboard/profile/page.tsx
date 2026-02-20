@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 
@@ -26,6 +26,7 @@ import { useRouter } from 'next/navigation';
 interface ProfileFormData {
   name: string;
   email: string;
+  retellApiKey: string;
 }
 
 /**
@@ -60,7 +61,7 @@ interface OAuthProvider {
  * Features:
  * - Display user information (name, email, profile picture)
  * - Change password form
- * - Linked OAuth providers display (Google, Apple)
+ * - Linked OAuth providers display (Google)
  * - Update profile information
  * - Dark mode support
  *
@@ -74,7 +75,11 @@ export default function ProfilePage() {
   const [profileForm, setProfileForm] = useState<ProfileFormData>({
     name: session?.user?.name || '',
     email: session?.user?.email || '',
+    retellApiKey: '',
   });
+  const [hasRetellKey, setHasRetellKey] = useState(false);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [retellKeyTouched, setRetellKeyTouched] = useState(false);
 
   const [passwordForm, setPasswordForm] = useState<PasswordFormData>({
     currentPassword: '',
@@ -87,6 +92,21 @@ export default function ProfilePage() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [profileMessage, setProfileMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Load profile (name, hasRetellKey) once
+  useEffect(() => {
+    if (status !== 'authenticated' || profileLoaded) return;
+    fetch('/api/user/profile')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.data) {
+          setProfileForm((prev) => ({ ...prev, name: data.data.name, email: data.data.email }));
+          setHasRetellKey(!!data.data.hasRetellKey);
+        }
+        setProfileLoaded(true);
+      })
+      .catch(() => setProfileLoaded(true));
+  }, [status, profileLoaded]);
 
   // Redirect if not authenticated
   if (status === 'unauthenticated') {
@@ -106,7 +126,6 @@ export default function ProfilePage() {
   // Determine OAuth provider linkage
   const userImage = session?.user?.image;
   const hasGoogleAuth = userImage?.includes('google') || userImage?.includes('lh3.googleusercontent.com');
-  const hasAppleAuth = userImage?.includes('apple') || false; // Apple doesn't typically provide public image URLs
 
   const oauthProviders: OAuthProvider[] = [
     {
@@ -134,16 +153,6 @@ export default function ProfilePage() {
         </svg>
       ),
     },
-    {
-      id: 'apple',
-      name: 'Apple',
-      linked: hasAppleAuth,
-      icon: (
-        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.21-1.96 1.07-3.11-1.05.05-2.31.74-3.03 1.59-.67.78-1.25 2.02-1.09 3.12 1.17.09 2.36-.82 3.05-1.6z" />
-        </svg>
-      ),
-    },
   ];
 
   /**
@@ -155,18 +164,26 @@ export default function ProfilePage() {
     setProfileMessage(null);
 
     try {
+      const body: { name: string; retell_api_key?: string | null } = { name: profileForm.name };
+      if (retellKeyTouched) {
+        body.retell_api_key = profileForm.retellApiKey.trim() || null;
+      }
+
       const response = await fetch('/api/user/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: profileForm.name }),
+        body: JSON.stringify(body),
       });
 
       const data = await response.json();
 
       if (response.ok) {
         setProfileMessage({ type: 'success', text: 'Profile updated successfully' });
-        // Refresh session to update UI
-        window.location.reload();
+        if (retellKeyTouched) {
+          setHasRetellKey(!!body.retell_api_key);
+          setProfileForm((prev) => ({ ...prev, retellApiKey: '' }));
+          setRetellKeyTouched(false);
+        }
       } else {
         setProfileMessage({ type: 'error', text: data.error || 'Failed to update profile' });
       }
@@ -296,6 +313,27 @@ export default function ProfilePage() {
                 title="Email cannot be changed"
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Email cannot be changed</p>
+            </div>
+
+            <div className="mb-4">
+              <label htmlFor="retellApiKey" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Retell API Key
+              </label>
+              <input
+                type="password"
+                id="retellApiKey"
+                value={profileForm.retellApiKey}
+                onChange={(e) => {
+                  setProfileForm((prev) => ({ ...prev, retellApiKey: e.target.value }));
+                  setRetellKeyTouched(true);
+                }}
+                placeholder={hasRetellKey ? '•••••••• (enter new key to change)' : 'Paste your Retell API key to sync calls'}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                autoComplete="off"
+              />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {hasRetellKey ? 'Key saved. Enter a new value to replace, or leave blank when updating to keep it.' : 'Required to sync calls from Retell on the Phone Calls page. Get it from your Retell dashboard.'}
+              </p>
             </div>
 
             {profileMessage && (

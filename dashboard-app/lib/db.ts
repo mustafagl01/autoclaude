@@ -17,6 +17,8 @@ export interface User {
   image: string | null;
   google_id: string | null;
   apple_id: string | null;
+  /** Per-user Retell API key for syncing that user's calls. Stored in DB, not env. */
+  retell_api_key: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -37,6 +39,7 @@ export interface Call {
   status: string;
   outcome: string | null;
   transcript: string | null;
+  recording_url: string | null;
   call_date: string;
   created_at: string;
 }
@@ -134,10 +137,12 @@ export async function createUser(userData: {
 
 export async function updateUser(
   id: string,
-  updates: Partial<Pick<User, 'name' | 'image' | 'password_hash' | 'google_id' | 'apple_id'>>
+  updates: Partial<Pick<User, 'name' | 'image' | 'password_hash' | 'google_id' | 'apple_id' | 'retell_api_key'>>
 ): Promise<DbResult<User>> {
   try {
     const now = new Date().toISOString();
+    const setRetellKey = updates.retell_api_key !== undefined;
+    const retellKeyValue = setRetellKey ? (updates.retell_api_key || null) : null;
     const { rows } = await sql<User>`
       UPDATE users SET
         name = COALESCE(${updates.name ?? null}, name),
@@ -145,6 +150,7 @@ export async function updateUser(
         password_hash = COALESCE(${updates.password_hash ?? null}, password_hash),
         google_id = COALESCE(${updates.google_id ?? null}, google_id),
         apple_id = COALESCE(${updates.apple_id ?? null}, apple_id),
+        ${setRetellKey ? sql`retell_api_key = ${retellKeyValue},` : sql``}
         updated_at = ${now}
       WHERE id = ${id}
       RETURNING *
@@ -336,12 +342,13 @@ export async function cacheCall(callData: {
   status: string;
   outcome?: string | null;
   transcript?: string | null;
+  recording_url?: string | null;
   call_date: string;
 }): Promise<DbResult<Call>> {
   try {
     const now = new Date().toISOString();
     const { rows } = await sql<Call>`
-      INSERT INTO calls (id, user_id, phone_number, duration, status, outcome, transcript, call_date, created_at)
+      INSERT INTO calls (id, user_id, phone_number, duration, status, outcome, transcript, recording_url, call_date, created_at)
       VALUES (
         ${callData.id},
         ${callData.user_id},
@@ -350,6 +357,7 @@ export async function cacheCall(callData: {
         ${callData.status},
         ${callData.outcome || null},
         ${callData.transcript || null},
+        ${callData.recording_url || null},
         ${callData.call_date},
         ${now}
       )
@@ -359,6 +367,7 @@ export async function cacheCall(callData: {
         status = EXCLUDED.status,
         outcome = EXCLUDED.outcome,
         transcript = EXCLUDED.transcript,
+        recording_url = EXCLUDED.recording_url,
         call_date = EXCLUDED.call_date
       RETURNING *
     `;

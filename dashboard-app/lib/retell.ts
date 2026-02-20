@@ -45,6 +45,13 @@ export interface RetellCall {
 /**
  * Detailed call information including full transcript
  */
+/** Call cost from Retell (combined_cost in cents) */
+export interface RetellCallCost {
+  combined_cost: number; // cents
+  total_duration_seconds?: number;
+  product_costs?: Array<{ product: string; cost: number; unit_price?: number }>;
+}
+
 export interface RetellCallDetails extends RetellCall {
   transcript_segments: Array<{
     speaker: 'agent' | 'customer';
@@ -62,6 +69,8 @@ export interface RetellCallDetails extends RetellCall {
     total_amount?: number;
     notes?: string;
   };
+  /** Cost of the call (from Retell get-call), in cents */
+  call_cost?: RetellCallCost | null;
 }
 
 /**
@@ -301,6 +310,219 @@ export async function getTranscript(callId: string): Promise<RetellResult<string
 // ============================================================================
 // Data Transformation Helpers
 // ============================================================================
+
+/**
+ * Fetch calls from Retell using REST API v2 (POST /v2/list-calls).
+ * When apiKey is passed (per-user key from DB), use it; else use RETELL_API_KEY env.
+ */
+export async function listCallsViaApi(
+  params?: {
+    limit?: number;
+    sort_order?: 'ascending' | 'descending';
+    pagination_key?: string;
+    filter_criteria?: {
+      call_status?: string[];
+      call_type?: string[];
+      start_timestamp?: { lower_threshold?: number; upper_threshold?: number };
+    };
+  },
+  /** Per-user API key from DB; if not set, uses process.env.RETELL_API_KEY */
+  apiKey?: string | null
+): Promise<RetellResult<RetellCall[]>> {
+  const key = apiKey ?? process.env.RETELL_API_KEY;
+  if (!key || key.trim() === '') {
+    return {
+      success: false,
+      error: apiKey === undefined
+        ? 'RETELL_API_KEY environment variable is not set'
+        : 'Add your Retell API key in Profile to sync calls.',
+    };
+  }
+
+  try {
+    const body: Record<string, unknown> = {
+      limit: params?.limit ?? 100,
+      sort_order: params?.sort_order ?? 'descending',
+    };
+    if (params?.pagination_key) body.pagination_key = params.pagination_key;
+    if (params?.filter_criteria) body.filter_criteria = params.filter_criteria;
+
+    const res = await fetch('https://api.retellai.com/v2/list-calls', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        success: false,
+        error: `Retell API ${res.status}: ${text || res.statusText}`,
+      };
+    }
+
+    const rawCalls: unknown = await res.json();
+    const list = Array.isArray(rawCalls) ? rawCalls : [];
+    const calls: RetellCall[] = list.map((c: unknown) =>
+      transformRetellCallFromV2(c as Record<string, unknown>)
+    );
+    return { success: true, data: calls };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch calls from Retell',
+    };
+  }
+}
+
+/**
+ * Fetch a single call's full details from Retell v2 (GET /v2/get-call/{call_id}).
+ * Uses the given apiKey (user's key from DB). Returns recording_url, transcript, transcript_object as segments.
+ */
+export async function getCallDetailsViaApi(
+  callId: string,
+  apiKey: string | null | undefined
+): Promise<RetellResult<RetellCallDetails>> {
+  const key = apiKey?.trim();
+  if (!key) {
+    return {
+      success: false,
+      error: 'Add your Retell API key in Profile to load call details and recording.',
+    };
+  }
+  try {
+    const res = await fetch(`https://api.retellai.com/v2/get-call/${encodeURIComponent(callId)}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        success: false,
+        error: `Retell API ${res.status}: ${text || res.statusText}`,
+      };
+    }
+    const raw = (await res.json()) as Record<string, unknown>;
+    const details = transformV2CallResponseToDetails(callId, raw);
+    return { success: true, data: details };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch call details from Retell',
+    };
+  }
+}
+
+/**
+ * Map Retell v2 get-call response (V2CallBase + phone/web) to RetellCallDetails.
+ */
+function transformV2CallResponseToDetails(callId: string, raw: Record<string, unknown>): RetellCallDetails {
+  const startTs = raw.start_timestamp != null ? Number(raw.start_timestamp) : 0;
+  const endTs = raw.end_timestamp != null ? Number(raw.end_timestamp) : null;
+  const durationMs = raw.duration_ms != null ? Number(raw.duration_ms) : null;
+  const direction = String(raw.direction || 'inbound');
+  const from = String(raw.from_number || '');
+  const to = String(raw.to_number || '');
+  const phone = direction === 'inbound' ? from : to;
+  const callStatus = String(raw.call_status || '');
+  const statusMap: Record<string, CallStatus> = {
+    ended: 'completed',
+    ongoing: 'in_progress',
+    registered: 'in_progress',
+    not_connected: 'failed',
+    error: 'failed',
+  };
+  const status = (statusMap[callStatus] || callStatus) as CallStatus;
+
+  const transcript = raw.transcript ? String(raw.transcript) : null;
+  const recording_url = raw.recording_url ? String(raw.recording_url) : null;
+
+  const transcript_object = raw.transcript_object;
+  const transcript_segments: RetellCallDetails['transcript_segments'] = Array.isArray(transcript_object)
+    ? (transcript_object as Array<Record<string, unknown>>).map((u) => ({
+        speaker: (u.role === 'agent' ? 'agent' : 'customer') as 'agent' | 'customer',
+        text: String(u.content ?? ''),
+        timestamp: u.words?.[0] != null ? String((u.words as Array<{ start?: number }>)[0]?.start ?? '') : '',
+      }))
+    : [];
+
+  const call_analysis = raw.call_analysis ? (raw.call_analysis as RetellCall['call_analysis']) : null;
+  const metadata: RetellCallDetails['metadata'] = {};
+
+  let call_cost: RetellCallDetails['call_cost'] = null;
+  if (raw.call_cost && typeof raw.call_cost === 'object') {
+    const c = raw.call_cost as Record<string, unknown>;
+    const combined = c.combined_cost != null ? Number(c.combined_cost) : 0;
+    call_cost = {
+      combined_cost: combined,
+      total_duration_seconds: c.total_duration_seconds != null ? Number(c.total_duration_seconds) : undefined,
+      product_costs: Array.isArray(c.product_costs)
+        ? (c.product_costs as Array<Record<string, unknown>>).map((p) => ({
+            product: String(p.product ?? ''),
+            cost: Number(p.cost ?? 0),
+            unit_price: p.unit_price != null ? Number(p.unit_price) : undefined,
+          }))
+        : undefined,
+    };
+  }
+
+  return {
+    call_id: callId,
+    phone_number: phone,
+    start_time: startTs ? new Date(startTs).toISOString() : '',
+    end_time: endTs ? new Date(endTs).toISOString() : null,
+    duration: durationMs != null ? Math.round(durationMs / 1000) : null,
+    status,
+    outcome: null,
+    transcript,
+    recording_url,
+    call_analysis,
+    transcript_segments,
+    metadata,
+    call_cost,
+  };
+}
+
+/**
+ * Map Retell v2 list-calls response item to our RetellCall (and DB-friendly) shape.
+ * v2 uses: call_id, from_number, to_number, direction, call_status, start_timestamp, end_timestamp, duration_ms, transcript, recording_url.
+ */
+function transformRetellCallFromV2(raw: Record<string, unknown>): RetellCall {
+  const startTs = raw.start_timestamp != null ? Number(raw.start_timestamp) : 0;
+  const endTs = raw.end_timestamp != null ? Number(raw.end_timestamp) : null;
+  const durationMs = raw.duration_ms != null ? Number(raw.duration_ms) : null;
+  const direction = String(raw.direction || '');
+  const from = String(raw.from_number || '');
+  const to = String(raw.to_number || '');
+  const phone = direction === 'inbound' ? from : to;
+  const callStatus = String(raw.call_status || '');
+  const statusMap: Record<string, CallStatus> = {
+    ended: 'completed',
+    ongoing: 'in_progress',
+    registered: 'in_progress',
+    not_connected: 'failed',
+    error: 'failed',
+  };
+  const status = (statusMap[callStatus] || callStatus) as CallStatus;
+
+  return {
+    call_id: String(raw.call_id || raw.id || ''),
+    phone_number: phone,
+    start_time: startTs ? new Date(startTs).toISOString() : '',
+    end_time: endTs ? new Date(endTs).toISOString() : null,
+    duration: durationMs != null ? Math.round(durationMs / 1000) : null,
+    status,
+    outcome: (raw.call_analysis && (raw.call_analysis as Record<string, unknown>).outcome != null)
+      ? ((raw.call_analysis as Record<string, unknown>).outcome as CallOutcome)
+      : null,
+    transcript: raw.transcript ? String(raw.transcript) : null,
+    recording_url: raw.recording_url ? String(raw.recording_url) : null,
+    call_analysis: raw.call_analysis ? (raw.call_analysis as RetellCall['call_analysis']) : null,
+  };
+}
 
 /**
  * Transform raw Retell API call data to our interface

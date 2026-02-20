@@ -1,50 +1,36 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import AuthForm from '@/components/AuthForm'
+
+const callbackUrl = '/dashboard'
 
 /**
  * Login Page
  *
  * Provides three authentication methods:
- * 1. Google OAuth - Redirects to Google consent screen
- * 2. Apple Sign-In - Redirects to Apple authentication
- * 3. Email/Password - Validates against D1 database
+ * 1. Google OAuth - Direct link to /api/auth/signin/google (server redirects to Google)
+ * 2. (Apple Sign-In hidden in UI)
+ * 3. Email/Password - Validates against database
  *
- * After successful authentication, redirects to /dashboard or the callbackUrl.
+ * OAuth uses direct links so the browser does a full navigation; no client-side fetch that can fail silently.
  */
 export default function LoginPage() {
   const router = useRouter()
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [googleConfigured, setGoogleConfigured] = useState<boolean | null>(null)
 
-  /**
-   * Handle OAuth sign-in (Google or Apple)
-   */
-  const handleOAuthSignIn = async (provider: 'google' | 'apple') => {
-    try {
-      setError('')
-      setIsLoading(true)
-
-      const result = await signIn(provider, {
-        callbackUrl: '/dashboard',
-        redirect: false,
+  useEffect(() => {
+    fetch('/api/auth/providers')
+      .then((res) => res.ok ? res.json() : {})
+      .then((providers) => {
+        setGoogleConfigured(!!(providers && providers.google))
       })
-
-      if (result?.error) {
-        setError(`${provider === 'google' ? 'Google' : 'Apple'} sign-in failed. Please try again.`)
-        setIsLoading(false)
-      } else if (result?.ok) {
-        router.push('/dashboard')
-        router.refresh()
-      }
-    } catch (err) {
-      setError('An unexpected error occurred. Please try again.')
-      setIsLoading(false)
-    }
-  }
+      .catch(() => setGoogleConfigured(false))
+  }, [])
 
   /**
    * Handle email/password sign-in
@@ -88,13 +74,19 @@ export default function LoginPage() {
 
         {/* Login Card */}
         <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 sm:p-8">
-          {/* OAuth Sign-In Buttons */}
+          {googleConfigured === false && (
+            <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                Google ile giriş şu an yapılandırılmamış. Vercel → Settings → Environment Variables içinde <strong>GOOGLE_CLIENT_ID</strong> ve <strong>GOOGLE_CLIENT_SECRET</strong> tanımlı olmalı. Sadece e-posta ile giriş yapabilirsin.
+              </p>
+            </div>
+          )}
+          {/* OAuth Sign-In: direct link so server redirects to Google */}
           <div className="space-y-3 mb-6">
             {/* Google Sign-In */}
-            <button
-              onClick={() => handleOAuthSignIn('google')}
-              disabled={isLoading}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            <a
+              href={`/api/auth/signin/google?${new URLSearchParams({ callbackUrl })}`}
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors no-underline text-inherit"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path
@@ -117,21 +109,7 @@ export default function LoginPage() {
               <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
                 Sign in with Google
               </span>
-            </button>
-
-            {/* Apple Sign-In */}
-            <button
-              onClick={() => handleOAuthSignIn('apple')}
-              disabled={isLoading}
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.91 5.3c-.21-1.8 1.37-3.31 2.86-3.42.36 1.77-1.63 3.43-2.86 3.42z" />
-              </svg>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                Sign in with Apple
-              </span>
-            </button>
+            </a>
           </div>
 
           {/* Divider */}

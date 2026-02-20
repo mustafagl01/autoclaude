@@ -15,6 +15,7 @@ import { redirect } from 'next/navigation';
 
 import { getCallsByUserId, type Call } from '@/lib/db';
 import CallList from '@/components/CallList';
+import SyncRetellButton from '@/components/SyncRetellButton';
 
 // ============================================================================
 // Server Component - Calls List Page
@@ -74,13 +75,16 @@ export default async function CallsListPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Phone Calls
-          </h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            View and search your phone call history
-          </p>
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              Phone Calls
+            </h1>
+            <p className="mt-2 text-gray-600 dark:text-gray-400">
+              View and search your phone call history. Sync from Retell to pull your latest calls.
+            </p>
+          </div>
+          <SyncRetellButton />
         </div>
 
         {/* Call List Component */}

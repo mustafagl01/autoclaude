@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   image TEXT,
   google_id TEXT UNIQUE,
   apple_id TEXT UNIQUE,
+  retell_api_key TEXT, -- Per-user Retell API key for syncing their calls
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -40,6 +41,7 @@ CREATE TABLE IF NOT EXISTS calls (
   status TEXT NOT NULL, -- completed, missed, failed
   outcome TEXT, -- order_placed, inquiry, complaint
   transcript TEXT, -- Full conversation transcript
+  recording_url TEXT, -- Retell recording URL (audio playback)
   call_date TEXT NOT NULL,
   created_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

@@ -92,12 +92,64 @@ export const authOptions: NextAuthConfig = {
     error: "/login",
   },
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      if (new URL(url).origin === baseUrl) return url;
+      return baseUrl;
+    },
+    // Google/Apple ile girenleri Postgres'e kaydet veya hesabı bağla; session'da DB id kullanılsın
+    async signIn({ user, account }) {
+      if (account?.provider === "credentials") return true;
+
+      if (account?.provider === "google" || account?.provider === "apple") {
+        try {
+          if (!user.email) return false;
+
+          const dbUser = await getUserByEmail(user.email);
+
+          if (!dbUser) {
+            const userId = crypto.randomUUID();
+            const result = await createUser({
+              id: userId,
+              email: user.email,
+              name: user.name || user.email.split("@")[0],
+              image: user.image || null,
+              password_hash: null,
+              google_id: account.provider === "google" ? account.providerAccountId : null,
+              apple_id: account.provider === "apple" ? account.providerAccountId : null,
+            });
+            return result.success;
+          }
+
+          if (account.provider === "google" && !dbUser.google_id) {
+            await updateUser(dbUser.id, { google_id: account.providerAccountId });
+          }
+          if (account.provider === "apple" && !dbUser.apple_id) {
+            await updateUser(dbUser.id, { apple_id: account.providerAccountId });
+          }
+          return true;
+        } catch (error) {
+          console.error("OAuth signIn error:", error);
+          return false;
+        }
+      }
+      return false;
+    },
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
         token.email = user.email;
         token.name = user.name;
         token.picture = user.image;
+        // Credentials: authorize() DB'den user döndü, user.id gerçek id. OAuth: signIn'de DB'ye yazdık, email ile bulup id alalım.
+        if (user.email) {
+          try {
+            const dbUser = await getUserByEmail(user.email);
+            if (dbUser) token.id = dbUser.id;
+            else if (user.id) token.id = user.id;
+          } catch (_) {
+            if (user.id) token.id = user.id;
+          }
+        } else if (user.id) token.id = user.id;
       }
       return token;
     },

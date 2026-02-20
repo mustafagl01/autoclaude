@@ -16,10 +16,10 @@
  */
 
 import { auth } from '@/app/api/auth/[...nextauth]/route';
-import { redirect } from 'next/navigation';
+import { redirect, notFound } from 'next/navigation';
 
-import { getCallById, type Call } from '@/lib/db';
-import { getCallDetails, type RetellCallDetails } from '@/lib/retell';
+import { getCallById, getUserById } from '@/lib/db';
+import { getCallDetailsViaApi, type RetellCallDetails } from '@/lib/retell';
 import Link from 'next/link';
 
 // ============================================================================
@@ -109,33 +109,38 @@ export default async function CallDetailsPage({
 
   const callId = params.id;
 
-  // Fetch call from Postgres cache first
+  // Fetch call from Postgres cache and ensure it belongs to current user
   const cachedCall = await getCallById(callId);
-
-  // Fetch full details from Retell API (for transcript and metadata)
-  let retellCallDetails: RetellCallDetails | null = null;
-  let transcriptError: string | null = null;
-
-  try {
-    const result = await getCallDetails(callId);
-    if (result.success && result.data) {
-      retellCallDetails = result.data;
-    } else {
-      transcriptError = result.error || 'Failed to fetch call details from Retell';
-    }
-  } catch (error) {
-    transcriptError = error instanceof Error ? error.message : 'Unknown error fetching call details';
+  if (!cachedCall || cachedCall.user_id !== session.user.id) {
+    notFound();
   }
 
-  // Merge data: prioritize Retell data for transcript, use cached data for basic info
+  // Fetch full details from Retell API using the user's own API key (transcript, recording_url)
+  let retellCallDetails: RetellCallDetails | null = null;
+  let transcriptError: string | null = null;
+  const user = await getUserById(session.user.id);
+  if (user?.retell_api_key?.trim()) {
+    try {
+      const result = await getCallDetailsViaApi(callId, user.retell_api_key);
+      if (result.success && result.data) {
+        retellCallDetails = result.data;
+      } else {
+        transcriptError = result.error || 'Failed to fetch call details from Retell';
+      }
+    } catch (error) {
+      transcriptError = error instanceof Error ? error.message : 'Unknown error fetching call details';
+    }
+  }
+
+  // Merge data: use Retell when available, otherwise cached. Recording from API or cache so user can always listen if we have it.
   const callMetadata: CallMetadata = {
     id: callId,
-    phone_number: retellCallDetails?.phone_number || cachedCall?.phone_number || 'Unknown',
-    call_date: retellCallDetails?.start_time || cachedCall?.call_date || new Date().toISOString(),
-    duration: retellCallDetails?.duration || cachedCall?.duration || null,
-    status: retellCallDetails?.status || cachedCall?.status || 'unknown',
-    outcome: retellCallDetails?.outcome || cachedCall?.outcome || null,
-    recording_url: retellCallDetails?.recording_url || null,
+    phone_number: retellCallDetails?.phone_number || cachedCall.phone_number || 'Unknown',
+    call_date: retellCallDetails?.start_time || cachedCall.call_date || new Date().toISOString(),
+    duration: retellCallDetails?.duration ?? cachedCall.duration ?? null,
+    status: retellCallDetails?.status || cachedCall.status || 'unknown',
+    outcome: retellCallDetails?.outcome ?? cachedCall.outcome ?? null,
+    recording_url: retellCallDetails?.recording_url || cachedCall.recording_url || null,
   };
 
   // Parse transcript segments
@@ -262,6 +267,21 @@ export default async function CallDetailsPage({
                     </dd>
                   </div>
                 )}
+                {retellCallDetails?.call_cost != null && (
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                      Call cost
+                    </dt>
+                    <dd className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                      ${(retellCallDetails.call_cost.combined_cost / 100).toFixed(2)}
+                      {retellCallDetails.call_cost.total_duration_seconds != null && (
+                        <span className="text-gray-500 dark:text-gray-400 font-normal ml-1">
+                          ({retellCallDetails.call_cost.total_duration_seconds}s)
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
 
@@ -275,7 +295,9 @@ export default async function CallDetailsPage({
                   controls
                   className="w-full"
                   preload="metadata"
+                  src={callMetadata.recording_url}
                 >
+                  <source src={callMetadata.recording_url} type="audio/wav" />
                   <source src={callMetadata.recording_url} type="audio/mpeg" />
                   Your browser does not support the audio element.
                 </audio>
