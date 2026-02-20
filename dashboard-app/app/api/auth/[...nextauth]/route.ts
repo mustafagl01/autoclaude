@@ -22,6 +22,7 @@ function hasEnv(name: string): boolean {
 
 // v5 için NextAuthConfig kullanıyoruz
 export const authOptions: NextAuthConfig = {
+  trustHost: true, // Vercel / production'da "Host must be trusted" hatasını önler
   providers: [
     ...(hasEnv("GOOGLE_CLIENT_ID") && hasEnv("GOOGLE_CLIENT_SECRET")
       ? [
@@ -163,6 +164,9 @@ export const authOptions: NextAuthConfig = {
   secret: process.env.NEXTAUTH_SECRET || "mgl-fallback-secret-12345",
   debug: true, // Vercel loglarında hatayı görmek için debug'ı açıyoruz
 };
+
+// Middleware ve testler için alias
+export const authConfig = authOptions;
 
 // V5 Export syntax'ı:
 export const { handlers, auth, signIn, signOut } = NextAuth(authOptions);

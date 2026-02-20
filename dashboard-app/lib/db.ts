@@ -40,6 +40,8 @@ export interface Call {
   outcome: string | null;
   transcript: string | null;
   recording_url: string | null;
+  /** Cost in cents (from Retell), stored when user views call detail */
+  call_cost_cents: number | null;
   call_date: string;
   created_at: string;
 }
@@ -342,12 +344,14 @@ export async function cacheCall(callData: {
   outcome?: string | null;
   transcript?: string | null;
   recording_url?: string | null;
+  call_cost_cents?: number | null;
   call_date: string;
 }): Promise<DbResult<Call>> {
   try {
     const now = new Date().toISOString();
+    const cost = callData.call_cost_cents ?? null;
     const { rows } = await sql<Call>`
-      INSERT INTO calls (id, user_id, phone_number, duration, status, outcome, transcript, recording_url, call_date, created_at)
+      INSERT INTO calls (id, user_id, phone_number, duration, status, outcome, transcript, recording_url, call_cost_cents, call_date, created_at)
       VALUES (
         ${callData.id},
         ${callData.user_id},
@@ -357,6 +361,7 @@ export async function cacheCall(callData: {
         ${callData.outcome || null},
         ${callData.transcript || null},
         ${callData.recording_url || null},
+        ${cost},
         ${callData.call_date},
         ${now}
       )
@@ -367,8 +372,21 @@ export async function cacheCall(callData: {
         outcome = EXCLUDED.outcome,
         transcript = EXCLUDED.transcript,
         recording_url = EXCLUDED.recording_url,
+        call_cost_cents = COALESCE(EXCLUDED.call_cost_cents, calls.call_cost_cents),
         call_date = EXCLUDED.call_date
       RETURNING *
+    `;
+    return { success: true, data: rows[0] };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/** Update call cost (e.g. after loading from Retell get-call). */
+export async function updateCallCost(callId: string, callCostCents: number): Promise<DbResult<Call>> {
+  try {
+    const { rows } = await sql<Call>`
+      UPDATE calls SET call_cost_cents = ${callCostCents} WHERE id = ${callId} RETURNING *
     `;
     return { success: true, data: rows[0] };
   } catch (error) {
@@ -387,6 +405,7 @@ export async function getCallMetrics(
   failed_calls: number;
   avg_duration: number;
   completion_rate: number;
+  total_cost_cents: number;
 }>> {
   try {
     const { rows } = await sql`
@@ -395,7 +414,8 @@ export async function getCallMetrics(
         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)::int as completed_calls,
         SUM(CASE WHEN status = 'missed' THEN 1 ELSE 0 END)::int as missed_calls,
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::int as failed_calls,
-        COALESCE(AVG(duration), 0)::float as avg_duration
+        COALESCE(AVG(duration), 0)::float as avg_duration,
+        COALESCE(SUM(call_cost_cents), 0)::int as total_cost_cents
       FROM calls
       WHERE user_id = ${userId}
         AND (${startDate ?? null}::text IS NULL OR call_date >= ${startDate ?? null})
@@ -413,8 +433,33 @@ export async function getCallMetrics(
         failed_calls: row.failed_calls || 0,
         avg_duration: row.avg_duration || 0,
         completion_rate: completionRate,
+        total_cost_cents: row.total_cost_cents || 0,
       },
     };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/** Sum of call_cost_cents for the user, optionally filtered by date/status/phone. */
+export async function getTotalCostCents(
+  userId: string,
+  filters?: { startDate?: string; endDate?: string; status?: string; phoneNumber?: string }
+): Promise<DbResult<number>> {
+  try {
+    const startDate = filters?.startDate ?? null;
+    const endDate = filters?.endDate ?? null;
+    const status = filters?.status ?? null;
+    const phoneNumber = filters?.phoneNumber ?? null;
+    const { rows } = await sql<{ sum: number }>`
+      SELECT COALESCE(SUM(call_cost_cents), 0)::int as sum FROM calls
+      WHERE user_id = ${userId}
+        AND (${startDate}::text IS NULL OR call_date >= ${startDate})
+        AND (${endDate}::text IS NULL OR call_date <= ${endDate})
+        AND (${status}::text IS NULL OR status = ${status})
+        AND (${phoneNumber}::text IS NULL OR phone_number LIKE ${'%' + (phoneNumber || '') + '%'})
+    `;
+    return { success: true, data: rows[0]?.sum ?? 0 };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }

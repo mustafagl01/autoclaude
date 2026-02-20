@@ -37,6 +37,8 @@ interface PaginationState {
 export interface CallListProps {
   initialCalls: Call[]
   initialTotal: number
+  /** Total cost in cents (all or filtered); shown above table */
+  initialTotalCostCents?: number
   userId: string
 }
 
@@ -70,7 +72,7 @@ export interface CallListProps {
  * />
  * ```
  */
-export default function CallList({ initialCalls, initialTotal, userId }: CallListProps) {
+export default function CallList({ initialCalls, initialTotal, initialTotalCostCents = 0, userId }: CallListProps) {
   // State management
   const [calls, setCalls] = useState<Call[]>(initialCalls)
   const [pagination, setPagination] = useState<PaginationState>({
@@ -79,6 +81,7 @@ export default function CallList({ initialCalls, initialTotal, userId }: CallLis
     total: initialTotal,
   })
   const [filters, setFilters] = useState<CallFilters>({})
+  const [totalCostCents, setTotalCostCents] = useState<number>(initialTotalCostCents)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -131,6 +134,7 @@ export default function CallList({ initialCalls, initialTotal, userId }: CallLis
       if (data.success) {
         setCalls(data.data.calls)
         setPagination((prev) => ({ ...prev, total: data.data.total }))
+        setTotalCostCents(typeof data.data.totalCostCents === 'number' ? data.data.totalCostCents : 0)
       } else {
         throw new Error(data.error || 'Failed to fetch calls')
       }
@@ -188,13 +192,10 @@ export default function CallList({ initialCalls, initialTotal, userId }: CallLis
   }
 
   /**
-   * Fetch calls when pagination or filters change
+   * Fetch calls when pagination or filters change (including when filters are cleared)
    */
   useEffect(() => {
-    // Only fetch if filters are applied or page changed from initial
-    if (pagination.page !== 1 || Object.keys(filters).length > 0) {
-      fetchCalls()
-    }
+    fetchCalls()
   }, [pagination.page, filters])
 
   // Calculate pagination info
@@ -305,6 +306,16 @@ export default function CallList({ initialCalls, initialTotal, userId }: CallLis
         </div>
       )}
 
+      {/* Total cost (all or for current filters) */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md px-6 py-3 flex items-center justify-between">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          {Object.keys(filters).length > 0 ? 'Total cost (filtered range)' : 'Total cost (all time)'}
+        </span>
+        <span className="text-lg font-semibold text-gray-900 dark:text-white">
+          ${(totalCostCents / 100).toFixed(2)}
+        </span>
+      </div>
+
       {/* Calls Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
         <div className="overflow-x-auto">
@@ -324,7 +335,7 @@ export default function CallList({ initialCalls, initialTotal, userId }: CallLis
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Outcome
+                  Cost
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Actions
@@ -505,10 +516,10 @@ function CallRow({ call }: CallRowProps) {
         </span>
       </td>
 
-      {/* Outcome */}
+      {/* Cost */}
       <td className="px-6 py-4 whitespace-nowrap">
         <div className="text-sm text-gray-700 dark:text-gray-300">
-          {call.outcome ? call.outcome.replace('_', ' ') : '-'}
+          {call.call_cost_cents != null ? `$${(call.call_cost_cents / 100).toFixed(2)}` : '-'}
         </div>
       </td>
 

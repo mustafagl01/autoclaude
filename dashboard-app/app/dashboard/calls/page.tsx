@@ -13,7 +13,7 @@
 import { auth } from '@/app/api/auth/[...nextauth]/route';
 import { redirect } from 'next/navigation';
 
-import { getCallsByUserId, type Call } from '@/lib/db';
+import { getCallsByUserId, getTotalCostCents, type Call } from '@/lib/db';
 import CallList from '@/components/CallList';
 import SyncRetellButton from '@/components/SyncRetellButton';
 
@@ -71,6 +71,9 @@ export default async function CallsListPage() {
     ? totalResult.data.length
     : initialCalls.length;
 
+  const costResult = await getTotalCostCents(session.user.id);
+  const initialTotalCostCents = costResult.success ? costResult.data : 0;
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -91,6 +94,7 @@ export default async function CallsListPage() {
         <CallList
           initialCalls={initialCalls}
           initialTotal={initialTotal}
+          initialTotalCostCents={initialTotalCostCents}
           userId={session.user.id}
         />
       </div>

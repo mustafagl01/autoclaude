@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/app/api/auth/[...nextauth]/route';
-import { getCallsByUserId, getCallsByDateRange, getCallsByStatus, getCallsByPhoneNumber, type Call } from '@/lib/db';
+import { getCallsByUserId, getCallsByDateRange, getCallsByStatus, getCallsByPhoneNumber, getTotalCostCents, type Call } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
@@ -58,7 +58,18 @@ export async function GET(request: NextRequest) {
     const totalResult = await getCallsByUserId(userId, 1000, 0);
     const total = totalResult.success && totalResult.data ? totalResult.data.length : callsResult.data.length;
 
-    return NextResponse.json({ success: true, data: { calls: callsResult.data, total } });
+    const costResult = await getTotalCostCents(userId, {
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      status: status || undefined,
+      phoneNumber: phoneNumber || undefined,
+    });
+    const totalCostCents = costResult.success ? costResult.data : 0;
+
+    return NextResponse.json({
+      success: true,
+      data: { calls: callsResult.data, total, totalCostCents },
+    });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An error occurred';
     return NextResponse.json({ success: false, error: errorMessage }, { status: 500 });

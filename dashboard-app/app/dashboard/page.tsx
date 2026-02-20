@@ -28,6 +28,7 @@ interface DashboardMetrics {
   failed_calls: number;
   avg_duration: number;
   completion_rate: number;
+  total_cost_cents: number;
 }
 
 // ============================================================================
@@ -79,6 +80,7 @@ export default async function DashboardPage() {
         failed_calls: 0,
         avg_duration: 0,
         completion_rate: 0,
+        total_cost_cents: 0,
       };
 
   // Extract recent calls with fallback
@@ -100,7 +102,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* Metrics Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {/* Total Calls Card */}
           <MetricCard
             title="Total Calls"
@@ -169,6 +171,29 @@ export default async function DashboardPage() {
             }
             color="purple"
           />
+
+          {/* Total Cost Card */}
+          <MetricCard
+            title="Total Cost"
+            value={`$${(metrics.total_cost_cents / 100).toFixed(2)}`}
+            subtitle="All time"
+            icon={
+              <svg
+                className="w-8 h-8 text-amber-600 dark:text-amber-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            }
+            color="amber"
+          />
         </div>
 
         {/* Recent Activity Section */}
@@ -204,7 +229,7 @@ interface MetricCardProps {
   value: string;
   subtitle: string;
   icon: React.ReactNode;
-  color: 'blue' | 'green' | 'purple';
+  color: 'blue' | 'green' | 'purple' | 'amber';
 }
 
 /**
@@ -221,6 +246,7 @@ function MetricCard({ title, value, subtitle, icon, color }: MetricCardProps) {
     blue: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
     green: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',
     purple: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800',
+    amber: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800',
   };
 
   return (

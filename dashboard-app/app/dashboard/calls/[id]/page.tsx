@@ -18,7 +18,7 @@
 import { auth } from '@/app/api/auth/[...nextauth]/route';
 import { redirect, notFound } from 'next/navigation';
 
-import { getCallById, getUserById } from '@/lib/db';
+import { getCallById, getUserById, updateCallCost } from '@/lib/db';
 import { getCallDetailsViaApi, type RetellCallDetails } from '@/lib/retell';
 import Link from 'next/link';
 
@@ -124,6 +124,10 @@ export default async function CallDetailsPage({
       const result = await getCallDetailsViaApi(callId, user.retell_api_key);
       if (result.success && result.data) {
         retellCallDetails = result.data;
+        // Persist cost to DB for list/totals (combined_cost is in cents)
+        if (retellCallDetails?.call_cost?.combined_cost != null && retellCallDetails.call_cost.combined_cost > 0) {
+          await updateCallCost(callId, Math.round(retellCallDetails.call_cost.combined_cost));
+        }
       } else {
         transcriptError = result.error || 'Failed to fetch call details from Retell';
       }
