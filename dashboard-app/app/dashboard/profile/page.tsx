@@ -166,7 +166,8 @@ export default function ProfilePage() {
     try {
       const body: { name: string; retell_api_key?: string | null } = { name: profileForm.name };
       if (retellKeyTouched) {
-        body.retell_api_key = profileForm.retellApiKey.trim() || null;
+        const key = profileForm.retellApiKey.replace(/\r\n|\r|\n/g, '').trim();
+        body.retell_api_key = key || null;
       }
 
       const response = await fetch('/api/user/profile', {
@@ -175,7 +176,17 @@ export default function ProfilePage() {
         body: JSON.stringify(body),
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      let data: { success?: boolean; error?: string } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        setProfileMessage({
+          type: 'error',
+          text: response.ok ? 'An error occurred while updating profile' : 'Server error. Please try again.',
+        });
+        return;
+      }
 
       if (response.ok) {
         setProfileMessage({ type: 'success', text: 'Profile updated successfully' });
