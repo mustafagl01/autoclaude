@@ -2,19 +2,16 @@
 const nextConfig = {
   reactStrictMode: true,
 
-  // Cloudflare Pages compatibility
-  // Using 'standalone' output for optimal Cloudflare Pages deployment
-  // The @cloudflare/next-on-pages adapter will convert this to .vercel/output/static
+  // Vercel deployment configuration
+  // Using 'standalone' output for optimal deployment performance
   output: 'standalone',
 
-  // Image optimization for Cloudflare Pages
-  // Cloudflare Pages doesn't support Next.js Image Optimization API
-  // Set unoptimized to true to use static images
+  // Image optimization (unoptimized for demo mode compatibility)
   images: {
     unoptimized: true,
   },
 
-  // Experimental features for Cloudflare Workers compatibility
+  // External packages that should not be bundled
   serverExternalPackages: ['@modelcontextprotocol/sdk'],
   typescript: {
     ignoreBuildErrors: true,
@@ -23,12 +20,10 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
 
-  // Webpack configuration for Cloudflare Workers edge runtime
+  // Webpack configuration
   webpack: (config, { isServer }) => {
-    // Ensure compatibility with Cloudflare Workers environment
-    if (isServer) {
-      config.externals = [...(config.externals || []), 'sharp', 'onnxruntime-node'];
-    }
+    // Remove externals for Vercel compatibility
+    // config.externals = [...(config.externals || []), 'sharp', 'onnxruntime-node'];
     return config;
   },
 }

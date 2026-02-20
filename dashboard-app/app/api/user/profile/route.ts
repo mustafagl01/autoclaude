@@ -69,10 +69,10 @@ export async function PATCH(request: NextRequest) {
         { success: false, error: 'Unauthorized' } as UpdateProfileResponse,
         { status: 401 }
       );
+    }
+
     // Get database instance
     const db = getDb();
-
-    }
 
     // Parse request body
     const body: UpdateProfileRequest = await request.json();

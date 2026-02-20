@@ -78,10 +78,10 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Unauthorized' } as ChangePasswordResponse,
         { status: 401 }
       );
+    }
+
     // Get database instance
     const db = getDb();
-
-    }
 
     // Parse request body
     const body: ChangePasswordRequest = await request.json();

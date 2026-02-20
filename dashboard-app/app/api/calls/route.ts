@@ -106,10 +106,10 @@ export async function GET(request: NextRequest) {
         { success: false, error: 'Unauthorized' },
         { status: 401 }
       );
+    }
+
     // Get database instance
     const db = getDb();
-
-    }
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;
