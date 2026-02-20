@@ -1,1 +1,95 @@
-/**\n * Calls List Page\n * UK Takeaway Phone Order Assistant Dashboard\n *\n * Displays a paginated list of phone calls with filtering and search capabilities.\n * Protected route requiring authentication.\n *\n * @see https://nextjs.org/docs/app/building-your-application/rendering/server-components\n * @see /lib/db.ts - Database query functions\n * @see /components/CallList.tsx - Client component with filters and pagination\n */\n\nimport { auth } from '@/app/api/auth/[...nextauth]/route';\nimport { redirect } from 'next/navigation';\n\nimport { getCallsByUserId, type Call } from '@/lib/db';\nimport CallList from '@/components/CallList';\n\n// ============================================================================\n// Server Component - Calls List Page\n// ============================================================================\n\n/**\n * Calls List Page Component\n *\n * Server component that fetches initial call data and renders the CallList client component.\n * Requires authenticated session via NextAuth.js.\n *\n * Features:\n * - Server-side data fetching for optimal performance\n * - Authentication check with redirect to login\n * - Initial data hydration for CallList component\n * - Client-side filtering and pagination\n * - Dark mode support\n * - Responsive design\n *\n * @returns Calls list page JSX or redirects to login\n *\n * @example\n * // Access at http://localhost:3000/dashboard/calls\n * // Requires valid authentication session\n */\nexport default async function CallsListPage() {\n  // Get current session (authentication check)\n  const session = await auth();\n\n  // Redirect unauthenticated users to login\n  if (!session || !session.user?.id) {\n    redirect('/login');\n  }\n\n  // Fetch initial calls (first page, 25 per page)\n  const initialLimit = 25;\n  const initialOffset = 0;\n  const callsResult = await getCallsByUserId(\n    session.user.id,\n    initialLimit,\n    initialOffset\n  );\n\n  // Extract initial calls with fallback\n  const initialCalls: Call[] = callsResult.success && callsResult.data\n    ? callsResult.data\n    : [];\n\n  // Get total count for pagination\n  // Note: In production, you might want to optimize this with a separate count query\n  const totalResult = await getCallsByUserId(session.user.id, 1000, 0);\n  const initialTotal = totalResult.success && totalResult.data\n    ? totalResult.data.length\n    : initialCalls.length;\n\n  return (\n    <div className=\"min-h-screen bg-gray-50 dark:bg-gray-900\">\n      <div className=\"max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8\">\n        {/* Page Header */}\n        <div className=\"mb-8\">\n          <h1 className=\"text-3xl font-bold text-gray-900 dark:text-white\">\n            Phone Calls\n          </h1>\n          <p className=\"mt-2 text-gray-600 dark:text-gray-400\">\n            View and search your phone call history\n          </p>\n        </div>\n\n        {/* Call List Component */}\n        <CallList\n          initialCalls={initialCalls}\n          initialTotal={initialTotal}\n          userId={session.user.id}\n        />\n      </div>\n    </div>\n  );\n}\n
+/**
+ * Calls List Page
+ * UK Takeaway Phone Order Assistant Dashboard
+ *
+ * Displays a paginated list of phone calls with filtering and search capabilities.
+ * Protected route requiring authentication.
+ *
+ * @see https://nextjs.org/docs/app/building-your-application/rendering/server-components
+ * @see /lib/db.ts - Database query functions
+ * @see /components/CallList.tsx - Client component with filters and pagination
+ */
+
+import { auth } from '@/app/api/auth/[...nextauth]/route';
+import { redirect } from 'next/navigation';
+
+import { getCallsByUserId, type Call } from '@/lib/db';
+import CallList from '@/components/CallList';
+
+// ============================================================================
+// Server Component - Calls List Page
+// ============================================================================
+
+/**
+ * Calls List Page Component
+ *
+ * Server component that fetches initial call data and renders the CallList client component.
+ * Requires authenticated session via NextAuth.js.
+ *
+ * Features:
+ * - Server-side data fetching for optimal performance
+ * - Authentication check with redirect to login
+ * - Initial data hydration for CallList component
+ * - Client-side filtering and pagination
+ * - Dark mode support
+ * - Responsive design
+ *
+ * @returns Calls list page JSX or redirects to login
+ *
+ * @example
+ * // Access at http://localhost:3000/dashboard/calls
+ * // Requires valid authentication session
+ */
+export default async function CallsListPage() {
+  // Get current session (authentication check)
+  const session = await auth();
+
+  // Redirect unauthenticated users to login
+  if (!session || !session.user?.id) {
+    redirect('/login');
+  }
+
+  // Fetch initial calls (first page, 25 per page)
+  const initialLimit = 25;
+  const initialOffset = 0;
+  const callsResult = await getCallsByUserId(
+    session.user.id,
+    initialLimit,
+    initialOffset
+  );
+
+  // Extract initial calls with fallback
+  const initialCalls: Call[] = callsResult.success && callsResult.data
+    ? callsResult.data
+    : [];
+
+  // Get total count for pagination
+  // Note: In production, you might want to optimize this with a separate count query
+  const totalResult = await getCallsByUserId(session.user.id, 1000, 0);
+  const initialTotal = totalResult.success && totalResult.data
+    ? totalResult.data.length
+    : initialCalls.length;
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Page Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Phone Calls
+          </h1>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">
+            View and search your phone call history
+          </p>
+        </div>
+
+        {/* Call List Component */}
+        <CallList
+          initialCalls={initialCalls}
+          initialTotal={initialTotal}
+          userId={session.user.id}
+        />
+      </div>
+    </div>
+  );
+}

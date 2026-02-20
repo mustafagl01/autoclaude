@@ -1,1 +1,365 @@
-/**\n * Dashboard Home Page\n * UK Takeaway Phone Order Assistant Dashboard\n *\n * Displays high-level metrics and recent activity for phone call data.\n * Protected route requiring authentication.\n *\n * @see https://nextjs.org/docs/app/building-your-application/rendering/server-components\n * @see /lib/db.ts - Database query functions\n */\n\nimport { auth } from '@/app/api/auth/[...nextauth]/route';\nimport { redirect } from 'next/navigation';\n\nimport { getCallMetrics, getRecentCalls, type Call } from '@/lib/db';\n\n// ============================================================================\n// Type Definitions\n// ============================================================================\n\n/**\n * Dashboard metrics data\n */\ninterface DashboardMetrics {\n  total_calls: number;\n  completed_calls: number;\n  missed_calls: number;\n  failed_calls: number;\n  avg_duration: number;\n  completion_rate: number;\n}\n\n// ============================================================================\n// Server Component - Dashboard Home\n// ============================================================================\n\n/**\n * Dashboard Home Page Component\n *\n * Server component that fetches and displays call metrics and recent activity.\n * Requires authenticated session via NextAuth.js.\n *\n * Features:\n * - Total calls count (all time)\n * - Average call duration (in seconds)\n * - Call completion rate (percentage)\n * - Recent activity list (last 10 calls)\n * - Responsive metrics cards layout\n * - Dark mode support\n *\n * @returns Dashboard home page JSX or redirects to login\n *\n * @example\n * // Access at http://localhost:3000/dashboard\n * // Requires valid authentication session\n */\nexport default async function DashboardPage() {\n  // Get current session (authentication check)\n  const session = await auth();\n\n  // Redirect unauthenticated users to login\n  if (!session || !session.user?.id) {\n    redirect('/login');\n  }\n\n  // Fetch call metrics for the user\n  const metricsResult = await getCallMetrics(session.user.id);\n\n  // Fetch recent calls (last 10)\n  const recentCallsResult = await getRecentCalls(session.user.id, 10);\n\n  // Extract metrics with fallback values\n  const metrics: DashboardMetrics = metricsResult.success && metricsResult.data\n    ? metricsResult.data\n    : {\n        total_calls: 0,\n        completed_calls: 0,\n        missed_calls: 0,\n        failed_calls: 0,\n        avg_duration: 0,\n        completion_rate: 0,\n      };\n\n  // Extract recent calls with fallback\n  const recentCalls: Call[] = recentCallsResult.success && recentCallsResult.data\n    ? recentCallsResult.data\n    : [];\n\n  return (\n    <div className=\"min-h-screen bg-gray-50 dark:bg-gray-900\">\n      <div className=\"max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8\">\n        {/* Page Header */}\n        <div className=\"mb-8\">\n          <h1 className=\"text-3xl font-bold text-gray-900 dark:text-white\">\n            Dashboard\n          </h1>\n          <p className=\"mt-2 text-gray-600 dark:text-gray-400\">\n            Overview of your phone call metrics and recent activity\n          </p>\n        </div>\n\n        {/* Metrics Cards Grid */}\n        <div className=\"grid grid-cols-1 md:grid-cols-3 gap-6 mb-8\">\n          {/* Total Calls Card */}\n          <MetricCard\n            title=\"Total Calls\"\n            value={metrics.total_calls.toString()}\n            subtitle=\"All time\"\n            icon={\n              <svg\n                className=\"w-8 h-8 text-blue-600 dark:text-blue-400\"\n                fill=\"none\"\n                stroke=\"currentColor\"\n                viewBox=\"0 0 24 24\"\n              >\n                <path\n                  strokeLinecap=\"round\"\n                  strokeLinejoin=\"round\"\n                  strokeWidth={2}\n                  d=\"M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z\"\n                />\n              </svg>\n            }\n            color=\"blue\"\n          />\n\n          {/* Average Duration Card */}\n          <MetricCard\n            title=\"Avg Duration\"\n            value={`${Math.round(metrics.avg_duration)}s`}\n            subtitle=\"Per call\"\n            icon={\n              <svg\n                className=\"w-8 h-8 text-green-600 dark:text-green-400\"\n                fill=\"none\"\n                stroke=\"currentColor\"\n                viewBox=\"0 0 24 24\"\n              >\n                <path\n                  strokeLinecap=\"round\"\n                  strokeLinejoin=\"round\"\n                  strokeWidth={2}\n                  d=\"M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z\"\n                />\n              </svg>\n            }\n            color=\"green\"\n          />\n\n          {/* Completion Rate Card */}\n          <MetricCard\n            title=\"Completion Rate\"\n            value={`${metrics.completion_rate.toFixed(1)}%`}\n            subtitle=\"Successful calls\"\n            icon={\n              <svg\n                className=\"w-8 h-8 text-purple-600 dark:text-purple-400\"\n                fill=\"none\"\n                stroke=\"currentColor\"\n                viewBox=\"0 0 24 24\"\n              >\n                <path\n                  strokeLinecap=\"round\"\n                  strokeLinejoin=\"round\"\n                  strokeWidth={2}\n                  d=\"M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z\"\n                />\n              </svg>\n            }\n            color=\"purple\"\n          />\n        </div>\n\n        {/* Recent Activity Section */}\n        <div className=\"bg-white dark:bg-gray-800 rounded-lg shadow-md p-6\">\n          <h2 className=\"text-xl font-semibold text-gray-900 dark:text-white mb-4\">\n            Recent Activity\n          </h2>\n\n          {recentCalls.length === 0 ? (\n            <EmptyState message=\"No calls recorded yet. Your recent activity will appear here.\" />\n          ) : (\n            <div className=\"space-y-4\">\n              {recentCalls.map((call) => (\n                <CallListItem key={call.id} call={call} />\n              ))}\n            </div>\n          )}\n        </div>\n      </div>\n    </div>\n  );\n}\n\n// ============================================================================\n// Subcomponents\n// ============================================================================\n\n/**\n * Metric Card Props\n */\ninterface MetricCardProps {\n  title: string;\n  value: string;\n  subtitle: string;\n  icon: React.ReactNode;\n  color: 'blue' | 'green' | 'purple';\n}\n\n/**\n * Metric Card Component\n *\n * Displays a single metric with icon, value, and subtitle.\n * Used in the metrics grid on the dashboard home.\n *\n * @param props - Metric card props\n * @returns Metric card JSX\n */\nfunction MetricCard({ title, value, subtitle, icon, color }: MetricCardProps) {\n  const colorClasses = {\n    blue: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',\n    green: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',\n    purple: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800',\n  };\n\n  return (\n    <div className={`${colorClasses[color]} border rounded-lg p-6`}>\n      <div className=\"flex items-center justify-between\">\n        <div>\n          <p className=\"text-sm font-medium text-gray-600 dark:text-gray-400\">\n            {title}\n          </p>\n          <p className=\"mt-2 text-3xl font-bold text-gray-900 dark:text-white\">\n            {value}\n          </p>\n          <p className=\"mt-1 text-sm text-gray-500 dark:text-gray-500\">\n            {subtitle}\n          </p>\n        </div>\n        <div className=\"flex-shrink-0\">{icon}</div>\n      </div>\n    </div>\n  );\n}\n\n/**\n * Call List Item Props\n */\ninterface CallListItemProps {\n  call: Call;\n}\n\n/**\n * Call List Item Component\n *\n * Displays a single call in the recent activity list.\n * Shows date, phone number, status, and outcome.\n *\n * @param props - Call list item props\n * @returns Call list item JSX\n */\nfunction CallListItem({ call }: CallListItemProps) {\n  // Format call date\n  const callDate = new Date(call.call_date);\n  const formattedDate = callDate.toLocaleDateString('en-GB', {\n    day: 'numeric',\n    month: 'short',\n    year: 'numeric',\n  });\n  const formattedTime = callDate.toLocaleTimeString('en-GB', {\n    hour: '2-digit',\n    minute: '2-digit',\n  });\n\n  // Status badge color\n  const statusColors: Record<string, string> = {\n    completed: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',\n    missed: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',\n    failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',\n    in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',\n    cancelled: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',\n  };\n\n  const statusBadgeClass =\n    statusColors[call.status] || statusColors.cancelled;\n\n  return (\n    <div className=\"flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">\n      <div className=\"flex-1\">\n        <div className=\"flex items-center gap-3\">\n          <div className=\"flex-shrink-0\">\n            <svg\n              className=\"w-5 h-5 text-gray-400\"\n              fill=\"none\"\n              stroke=\"currentColor\"\n              viewBox=\"0 0 24 24\"\n            >\n              <path\n                strokeLinecap=\"round\"\n                strokeLinejoin=\"round\"\n                strokeWidth={2}\n                d=\"M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z\"\n              />\n            </svg>\n          </div>\n          <div>\n            <p className=\"text-sm font-medium text-gray-900 dark:text-white\">\n              {call.phone_number}\n            </p>\n            <p className=\"text-xs text-gray-500 dark:text-gray-400\">\n              {formattedDate} at {formattedTime}\n            </p>\n          </div>\n        </div>\n      </div>\n\n      <div className=\"flex items-center gap-3\">\n        {call.outcome && (\n          <span className=\"text-sm text-gray-600 dark:text-gray-400\">\n            {call.outcome.replace('_', ' ')}\n          </span>\n        )}\n        <span className={`px-3 py-1 text-xs font-medium rounded-full ${statusBadgeClass}`}>\n          {call.status.replace('_', ' ')}\n        </span>\n      </div>\n    </div>\n  );\n}\n\n/**\n * Empty State Props\n */\ninterface EmptyStateProps {\n  message: string;\n}\n\n/**\n * Empty State Component\n *\n * Displays a message when no data is available.\n *\n * @param props - Empty state props\n * @returns Empty state JSX\n */\nfunction EmptyState({ message }: EmptyStateProps) {\n  return (\n    <div className=\"text-center py-12\">\n      <svg\n        className=\"mx-auto h-12 w-12 text-gray-400\"\n        fill=\"none\"\n        stroke=\"currentColor\"\n        viewBox=\"0 0 24 24\"\n      >\n        <path\n          strokeLinecap=\"round\"\n          strokeLinejoin=\"round\"\n          strokeWidth={2}\n          d=\"M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002-2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z\"\n        />\n      </svg>\n      <p className=\"mt-4 text-sm text-gray-500 dark:text-gray-400\">{message}</p>\n    </div>\n  );\n}\n
+/**
+ * Dashboard Home Page
+ * UK Takeaway Phone Order Assistant Dashboard
+ *
+ * Displays high-level metrics and recent activity for phone call data.
+ * Protected route requiring authentication.
+ *
+ * @see https://nextjs.org/docs/app/building-your-application/rendering/server-components
+ * @see /lib/db.ts - Database query functions
+ */
+
+import { auth } from '@/app/api/auth/[...nextauth]/route';
+import { redirect } from 'next/navigation';
+
+import { getCallMetrics, getRecentCalls, type Call } from '@/lib/db';
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
+
+/**
+ * Dashboard metrics data
+ */
+interface DashboardMetrics {
+  total_calls: number;
+  completed_calls: number;
+  missed_calls: number;
+  failed_calls: number;
+  avg_duration: number;
+  completion_rate: number;
+}
+
+// ============================================================================
+// Server Component - Dashboard Home
+// ============================================================================
+
+/**
+ * Dashboard Home Page Component
+ *
+ * Server component that fetches and displays call metrics and recent activity.
+ * Requires authenticated session via NextAuth.js.
+ *
+ * Features:
+ * - Total calls count (all time)
+ * - Average call duration (in seconds)
+ * - Call completion rate (percentage)
+ * - Recent activity list (last 10 calls)
+ * - Responsive metrics cards layout
+ * - Dark mode support
+ *
+ * @returns Dashboard home page JSX or redirects to login
+ *
+ * @example
+ * // Access at http://localhost:3000/dashboard
+ * // Requires valid authentication session
+ */
+export default async function DashboardPage() {
+  // Get current session (authentication check)
+  const session = await auth();
+
+  // Redirect unauthenticated users to login
+  if (!session || !session.user?.id) {
+    redirect('/login');
+  }
+
+  // Fetch call metrics for the user
+  const metricsResult = await getCallMetrics(session.user.id);
+
+  // Fetch recent calls (last 10)
+  const recentCallsResult = await getRecentCalls(session.user.id, 10);
+
+  // Extract metrics with fallback values
+  const metrics: DashboardMetrics = metricsResult.success && metricsResult.data
+    ? metricsResult.data
+    : {
+        total_calls: 0,
+        completed_calls: 0,
+        missed_calls: 0,
+        failed_calls: 0,
+        avg_duration: 0,
+        completion_rate: 0,
+      };
+
+  // Extract recent calls with fallback
+  const recentCalls: Call[] = recentCallsResult.success && recentCallsResult.data
+    ? recentCallsResult.data
+    : [];
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Page Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Dashboard
+          </h1>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">
+            Overview of your phone call metrics and recent activity
+          </p>
+        </div>
+
+        {/* Metrics Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          {/* Total Calls Card */}
+          <MetricCard
+            title="Total Calls"
+            value={metrics.total_calls.toString()}
+            subtitle="All time"
+            icon={
+              <svg
+                className="w-8 h-8 text-blue-600 dark:text-blue-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
+                />
+              </svg>
+            }
+            color="blue"
+          />
+
+          {/* Average Duration Card */}
+          <MetricCard
+            title="Avg Duration"
+            value={`${Math.round(metrics.avg_duration)}s`}
+            subtitle="Per call"
+            icon={
+              <svg
+                className="w-8 h-8 text-green-600 dark:text-green-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            }
+            color="green"
+          />
+
+          {/* Completion Rate Card */}
+          <MetricCard
+            title="Completion Rate"
+            value={`${metrics.completion_rate.toFixed(1)}%`}
+            subtitle="Successful calls"
+            icon={
+              <svg
+                className="w-8 h-8 text-purple-600 dark:text-purple-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            }
+            color="purple"
+          />
+        </div>
+
+        {/* Recent Activity Section */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+            Recent Activity
+          </h2>
+
+          {recentCalls.length === 0 ? (
+            <EmptyState message="No calls recorded yet. Your recent activity will appear here." />
+          ) : (
+            <div className="space-y-4">
+              {recentCalls.map((call) => (
+                <CallListItem key={call.id} call={call} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Subcomponents
+// ============================================================================
+
+/**
+ * Metric Card Props
+ */
+interface MetricCardProps {
+  title: string;
+  value: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  color: 'blue' | 'green' | 'purple';
+}
+
+/**
+ * Metric Card Component
+ *
+ * Displays a single metric with icon, value, and subtitle.
+ * Used in the metrics grid on the dashboard home.
+ *
+ * @param props - Metric card props
+ * @returns Metric card JSX
+ */
+function MetricCard({ title, value, subtitle, icon, color }: MetricCardProps) {
+  const colorClasses = {
+    blue: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
+    green: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',
+    purple: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800',
+  };
+
+  return (
+    <div className={`${colorClasses[color]} border rounded-lg p-6`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+            {title}
+          </p>
+          <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
+            {value}
+          </p>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-500">
+            {subtitle}
+          </p>
+        </div>
+        <div className="flex-shrink-0">{icon}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Call List Item Props
+ */
+interface CallListItemProps {
+  call: Call;
+}
+
+/**
+ * Call List Item Component
+ *
+ * Displays a single call in the recent activity list.
+ * Shows date, phone number, status, and outcome.
+ *
+ * @param props - Call list item props
+ * @returns Call list item JSX
+ */
+function CallListItem({ call }: CallListItemProps) {
+  // Format call date
+  const callDate = new Date(call.call_date);
+  const formattedDate = callDate.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  const formattedTime = callDate.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  // Status badge color
+  const statusColors: Record<string, string> = {
+    completed: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    missed: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+    in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    cancelled: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
+  };
+
+  const statusBadgeClass =
+    statusColors[call.status] || statusColors.cancelled;
+
+  return (
+    <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+      <div className="flex-1">
+        <div className="flex items-center gap-3">
+          <div className="flex-shrink-0">
+            <svg
+              className="w-5 h-5 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
+              />
+            </svg>
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              {call.phone_number}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {formattedDate} at {formattedTime}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        {call.outcome && (
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            {call.outcome.replace('_', ' ')}
+          </span>
+        )}
+        <span className={`px-3 py-1 text-xs font-medium rounded-full ${statusBadgeClass}`}>
+          {call.status.replace('_', ' ')}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Empty State Props
+ */
+interface EmptyStateProps {
+  message: string;
+}
+
+/**
+ * Empty State Component
+ *
+ * Displays a message when no data is available.
+ *
+ * @param props - Empty state props
+ * @returns Empty state JSX
+ */
+function EmptyState({ message }: EmptyStateProps) {
+  return (
+    <div className="text-center py-12">
+      <svg
+        className="mx-auto h-12 w-12 text-gray-400"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002-2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+        />
+      </svg>
+      <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">{message}</p>
+    </div>
+  );
+}

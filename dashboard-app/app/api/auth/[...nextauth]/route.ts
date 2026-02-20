@@ -41,7 +41,7 @@ export const authOptions: NextAuthConfig = {
             clientSecret: {
               appleId: requireEnv("APPLE_ID"),
               teamId: requireEnv("APPLE_TEAM_ID"),
-              privateKey: requireEnv("APPLE_PRIVATE_KEY").replace(/\\n/g, "\n"),
+              privateKey: requireEnv("APPLE_PRIVATE_KEY").replace(/\n/g, "\n"),
               keyId: requireEnv("APPLE_KEY_ID"),
             },
           }),
