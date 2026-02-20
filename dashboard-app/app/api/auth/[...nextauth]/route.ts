@@ -29,6 +29,13 @@ export const authOptions: NextAuthConfig = {
           GoogleProvider({
             clientId: requireEnv("GOOGLE_CLIENT_ID"),
             clientSecret: requireEnv("GOOGLE_CLIENT_SECRET"),
+            authorization: {
+              params: {
+                prompt: "consent",
+                access_type: "offline",
+                response_type: "code",
+              },
+            },
           }),
         ]
       : []),
@@ -131,6 +138,11 @@ export const authOptions: NextAuthConfig = {
           return true;
         } catch (error) {
           console.error("OAuth signIn error:", error);
+          console.error("Error details:", {
+            provider: account?.provider,
+            email: user.email,
+            errorMessage: error instanceof Error ? error.message : String(error),
+          });
           return false;
         }
       }
@@ -163,7 +175,23 @@ export const authOptions: NextAuthConfig = {
   },
   secret: process.env.NEXTAUTH_SECRET || "mgl-fallback-secret-12345",
   debug: true, // Vercel loglarında hatayı görmek için debug'ı açıyoruz
+  // NEXTAUTH_URL kontrolü - production'da mutlaka set edilmeli
+  ...(process.env.NEXTAUTH_URL ? {} : {
+    // NEXTAUTH_URL yoksa trustHost ile otomatik algılanır ama yine de loglayalım
+    // (Vercel'de genelde otomatik algılanır ama manuel set etmek daha güvenli)
+  }),
 };
+
+// Startup'da env var kontrolü (sadece log için)
+if (process.env.NODE_ENV === 'production') {
+  const hasGoogle = hasEnv("GOOGLE_CLIENT_ID") && hasEnv("GOOGLE_CLIENT_SECRET");
+  const hasNextAuthUrl = hasEnv("NEXTAUTH_URL");
+  console.log("[NextAuth] Config check:", {
+    googleConfigured: hasGoogle,
+    nextAuthUrlSet: hasNextAuthUrl,
+    nextAuthUrl: hasNextAuthUrl ? process.env.NEXTAUTH_URL : "(not set - using trustHost)",
+  });
+}
 
 // Middleware ve testler için alias
 export const authConfig = authOptions;
