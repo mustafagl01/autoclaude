@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/app/api/auth/[...nextauth]/route';
-import { getCallsByUserId, getCallsByDateRange, getCallsByStatus, getCallsByPhoneNumber, getTotalCostCents, getUserById, updateCallCost, type Call } from '@/lib/db';
-import { getCallDetailsViaApi } from '@/lib/retell';
+import { getCallsByUserId, getCallsByDateRange, getCallsByStatus, getCallsByPhoneNumber, getTotalCostCents, type Call } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
@@ -66,52 +65,6 @@ export async function GET(request: NextRequest) {
       phoneNumber: phoneNumber || undefined,
     });
     const totalCostCents = costResult.success ? costResult.data : 0;
-
-    // Fetch costs for calls that don't have cost yet
-    // Only fetch for first 5 calls to avoid rate limits and keep response fast
-    const callsWithoutCost = callsResult.data
-      .filter((call) => call.call_cost_cents == null)
-      .slice(0, 5);
-
-    if (callsWithoutCost.length > 0) {
-      const user = await getUserById(userId);
-      const apiKey = user?.retell_api_key?.trim();
-
-      if (apiKey) {
-        // Fetch costs in parallel with 2 second total timeout (don't block response too long)
-        const costFetchPromises = callsWithoutCost.map(async (call) => {
-          try {
-            const result = await Promise.race([
-              getCallDetailsViaApi(call.id, apiKey),
-              new Promise<{ success: false; error: string }>((resolve) =>
-                setTimeout(() => resolve({ success: false, error: 'Timeout' }), 2000)
-              ),
-            ]);
-
-            if (result.success && result.data?.call_cost?.combined_cost != null) {
-              const costCents = Math.round(result.data.call_cost.combined_cost);
-              if (costCents > 0) {
-                await updateCallCost(call.id, costCents);
-                // Update the call object in the response so cost appears immediately
-                const callIndex = callsResult.data.findIndex((c) => c.id === call.id);
-                if (callIndex >= 0) {
-                  callsResult.data[callIndex].call_cost_cents = costCents;
-                }
-              }
-            }
-          } catch (error) {
-            // Silently fail - cost will be fetched when user views details
-            console.error(`Failed to fetch cost for call ${call.id}:`, error);
-          }
-        });
-
-        // Wait for all cost fetches with a total timeout of 3 seconds
-        await Promise.race([
-          Promise.all(costFetchPromises),
-          new Promise((resolve) => setTimeout(resolve, 3000)),
-        ]);
-      }
-    }
 
     return NextResponse.json({
       success: true,
