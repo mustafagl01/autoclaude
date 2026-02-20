@@ -337,6 +337,7 @@ export default function CallList({ initialCalls, initialTotal, initialTotalCostC
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Cost
                 </th>
+                {/* Cost column header - updated */}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Actions
                 </th>
