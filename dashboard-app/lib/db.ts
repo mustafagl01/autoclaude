@@ -32,7 +32,7 @@ const MOCK_USERS: User[] = [
   {
     id: 'demo-user-2',
     email: 'admin@takeaway.uk',
-    password_hash: null, // Will be set by hashPassword in real scenario
+    password_hash: 'demo-password-hash-abc123', // Password-based user for demo
     name: 'Admin User',
     image: null,
     google_id: null,
