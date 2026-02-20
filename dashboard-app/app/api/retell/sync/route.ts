@@ -55,6 +55,7 @@ export async function POST(): Promise<NextResponse> {
       outcome: call.outcome ?? null,
       transcript: call.transcript ?? null,
       recording_url: call.recording_url ?? null,
+      call_cost_cents: call.call_cost_cents ?? null,
       call_date: call.start_time || new Date().toISOString(),
     });
     if (cacheResult.success) synced++;
