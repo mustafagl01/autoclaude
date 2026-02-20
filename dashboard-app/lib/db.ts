@@ -4,7 +4,160 @@
  *
  * Provides type-safe query functions for D1 database operations.
  * Follows Cloudflare D1 pattern: prepare() → bind() → all()/first()/run()
+ *
+ * DEMO MODE: Set DEMO_MODE=true environment variable to use mock data instead of D1 database.
+ * This is useful for Vercel deployment or local development without Cloudflare setup.
  */
+
+// ============================================================================
+// Mock Data for Demo Mode
+// ============================================================================
+
+/**
+ * Demo mode mock users
+ * These are used when DEMO_MODE=true
+ */
+const MOCK_USERS: User[] = [
+  {
+    id: 'demo-user-1',
+    email: 'demo@takeaway.uk',
+    password_hash: null, // OAuth-only user
+    name: 'Demo Restaurant Owner',
+    image: null,
+    google_id: 'demo-google-id-123',
+    apple_id: null,
+    created_at: '2025-01-15T10:00:00.000Z',
+    updated_at: '2025-01-15T10:00:00.000Z',
+  },
+  {
+    id: 'demo-user-2',
+    email: 'admin@takeaway.uk',
+    password_hash: null, // Will be set by hashPassword in real scenario
+    name: 'Admin User',
+    image: null,
+    google_id: null,
+    apple_id: null,
+    created_at: '2025-01-10T09:00:00.000Z',
+    updated_at: '2025-01-10T09:00:00.000Z',
+  },
+];
+
+/**
+ * Demo mode mock calls
+ * These are used when DEMO_MODE=true
+ */
+const MOCK_CALLS: Call[] = [
+  {
+    id: 'call-001',
+    user_id: 'demo-user-1',
+    phone_number: '+44 20 7123 4567',
+    duration: 245,
+    status: 'completed',
+    outcome: 'order_placed',
+    transcript: 'Customer ordered chicken tikka masala, pilau rice, and naan bread. Total £18.50.',
+    call_date: '2025-02-19T18:30:00.000Z',
+    created_at: '2025-02-19T18:35:00.000Z',
+  },
+  {
+    id: 'call-002',
+    user_id: 'demo-user-1',
+    phone_number: '+44 20 7234 5678',
+    duration: 180,
+    status: 'completed',
+    outcome: 'inquiry',
+    transcript: 'Customer asked about opening hours and delivery areas.',
+    call_date: '2025-02-19T17:15:00.000Z',
+    created_at: '2025-02-19T17:18:00.000Z',
+  },
+  {
+    id: 'call-003',
+    user_id: 'demo-user-1',
+    phone_number: '+44 20 7345 6789',
+    duration: null,
+    status: 'missed',
+    outcome: null,
+    transcript: null,
+    call_date: '2025-02-19T16:45:00.000Z',
+    created_at: '2025-02-19T16:45:00.000Z',
+  },
+  {
+    id: 'call-004',
+    user_id: 'demo-user-1',
+    phone_number: '+44 20 7456 7890',
+    duration: 320,
+    status: 'completed',
+    outcome: 'order_placed',
+    transcript: 'Customer ordered lamb rogan josh, onion bhajis, and two garlic naans. Total £24.00.',
+    call_date: '2025-02-18T19:20:00.000Z',
+    created_at: '2025-02-18T19:25:00.000Z',
+  },
+  {
+    id: 'call-005',
+    user_id: 'demo-user-1',
+    phone_number: '+44 20 7567 8901',
+    duration: 95,
+    status: 'failed',
+    outcome: 'technical_issue',
+    transcript: 'Call disconnected due to poor signal quality.',
+    call_date: '2025-02-18T14:30:00.000Z',
+    created_at: '2025-02-18T14:31:00.000Z',
+  },
+  {
+    id: 'call-006',
+    user_id: 'demo-user-1',
+    phone_number: '+44 20 7678 9012',
+    duration: 410,
+    status: 'completed',
+    outcome: 'complaint',
+    transcript: 'Customer reported cold food delivery and requested refund for £22.50 order.',
+    call_date: '2025-02-17T21:00:00.000Z',
+    created_at: '2025-02-17T21:07:00.000Z',
+  },
+  {
+    id: 'call-007',
+    user_id: 'demo-user-1',
+    phone_number: '+44 20 7789 0123',
+    duration: 195,
+    status: 'completed',
+    outcome: 'order_placed',
+    transcript: 'Customer ordered vegetable biryani, samosas, and mango chutney. Total £15.00.',
+    call_date: '2025-02-17T18:00:00.000Z',
+    created_at: '2025-02-17T18:03:00.000Z',
+  },
+  {
+    id: 'call-008',
+    user_id: 'demo-user-1',
+    phone_number: '+44 20 7890 1234',
+    duration: null,
+    status: 'missed',
+    outcome: null,
+    transcript: null,
+    call_date: '2025-02-17T12:30:00.000Z',
+    created_at: '2025-02-17T12:30:00.000Z',
+  },
+  {
+    id: 'call-009',
+    user_id: 'demo-user-1',
+    phone_number: '+44 20 7901 2345',
+    duration: 275,
+    status: 'completed',
+    outcome: 'order_placed',
+    transcript: 'Customer ordered mixed grill for two with extra naans. Total £35.00.',
+    call_date: '2025-02-16T20:15:00.000Z',
+    created_at: '2025-02-16T20:20:00.000Z',
+  },
+  {
+    id: 'call-010',
+    user_id: 'demo-user-1',
+    phone_number: '+44 20 7012 3456',
+    duration: 150,
+    status: 'completed',
+    outcome: 'inquiry',
+    transcript: 'Customer asked about vegetarian options and allergen information.',
+    call_date: '2025-02-16T15:45:00.000Z',
+    created_at: '2025-02-16T15:48:00.000Z',
+  },
+];
 
 // ============================================================================
 // Type Definitions
@@ -84,6 +237,517 @@ export interface DbResult<T> {
 // ============================================================================
 
 /**
+ * Mock D1 Database for Demo Mode
+ * Provides an in-memory database that mimics Cloudflare D1 behavior
+ * Used when DEMO_MODE=true environment variable is set
+ */
+class MockD1Database implements D1Database {
+  private users: User[] = [...MOCK_USERS];
+  private calls: Call[] = [...MOCK_CALLS];
+  private sessions: Session[] = [];
+  private auditLogs: AuditLog[] = [];
+
+  prepare(query: string): MockD1Statement {
+    return new MockD1Statement(query, this);
+  }
+
+  // Internal methods for MockD1Statement to access
+  getUsers(): User[] {
+    return this.users;
+  }
+
+  getCalls(): Call[] {
+    return this.calls;
+  }
+
+  getSessions(): Session[] {
+    return this.sessions;
+  }
+
+  getAuditLogs(): AuditLog[] {
+    return this.auditLogs;
+  }
+
+  addUser(user: User): void {
+    this.users.push(user);
+  }
+
+  addCall(call: Call): void {
+    this.calls.push(call);
+  }
+
+  addSession(session: Session): void {
+    this.sessions.push(session);
+  }
+
+  addAuditLog(log: AuditLog): void {
+    this.auditLogs.push(log);
+  }
+
+  updateUser(id: string, updates: Partial<User>): void {
+    const index = this.users.findIndex((u) => u.id === id);
+    if (index !== -1) {
+      this.users[index] = { ...this.users[index], ...updates, updated_at: new Date().toISOString() };
+    }
+  }
+
+  deleteUser(id: string): void {
+    this.users = this.users.filter((u) => u.id !== id);
+  }
+
+  deleteCall(id: string): void {
+    this.calls = this.calls.filter((c) => c.id !== id);
+  }
+
+  deleteSession(id: string): void {
+    this.sessions = this.sessions.filter((s) => s.id !== id);
+  }
+
+  deleteSessionsBefore(date: string): void {
+    this.sessions = this.sessions.filter((s) => s.expires_at >= date);
+  }
+
+  deleteOldAuditLogs(userId: string, beforeDate: string): void {
+    this.auditLogs = this.auditLogs.filter((log) => !(log.user_id === userId && log.created_at < beforeDate));
+  }
+
+  batch(statements: MockD1Statement[]): Promise<D1Result[]> {
+    return Promise.all(statements.map((stmt) => stmt.run()));
+  }
+}
+
+/**
+ * Mock D1 Statement for Demo Mode
+ * Implements the D1Statement interface for query execution
+ */
+class MockD1Statement implements D1Statement {
+  private query: string;
+  private db: MockD1Database;
+  private params: unknown[] = [];
+
+  constructor(query: string, db: MockD1Database) {
+    this.query = query;
+    this.db = db;
+  }
+
+  bind(...params: unknown[]): this {
+    this.params = params;
+    return this;
+  }
+
+  async all(): Promise<D1Result> {
+    const results = this.executeSelect();
+    return {
+      results,
+      success: true,
+      statement: this.query,
+    };
+  }
+
+  async first(): Promise<D1Result | null> {
+    const results = this.executeSelect();
+    return {
+      results: results[0] || null,
+      success: true,
+      statement: this.query,
+    };
+  }
+
+  async run(): Promise<D1Result> {
+    const meta = this.executeUpdate();
+    return {
+      results: null,
+      success: true,
+      statement: this.query,
+      meta,
+    };
+  }
+
+  private executeSelect(): Record<string, unknown>[] {
+    const lowerQuery = this.query.toLowerCase();
+
+    // SELECT queries
+    if (lowerQuery.includes('select')) {
+      // User queries
+      if (lowerQuery.includes('from users')) {
+        return this.handleUserSelect();
+      }
+
+      // Call queries
+      if (lowerQuery.includes('from calls')) {
+        return this.handleCallSelect();
+      }
+
+      // Session queries
+      if (lowerQuery.includes('from sessions')) {
+        return this.handleSessionSelect();
+      }
+
+      // Audit log queries
+      if (lowerQuery.includes('from audit_log')) {
+        return this.handleAuditLogSelect();
+      }
+
+      // Aggregate functions
+      if (lowerQuery.includes('count(') || lowerQuery.includes('sum(') || lowerQuery.includes('avg(')) {
+        return this.handleAggregateSelect();
+      }
+
+      // SQLite version query
+      if (lowerQuery.includes('sqlite_version()')) {
+        return [{ version: '3.40.0' }];
+      }
+    }
+
+    return [];
+  }
+
+  private handleUserSelect(): Record<string, unknown>[] {
+    const users = this.db.getUsers();
+
+    // Filter by email
+    if (this.query.includes('email = ?')) {
+      const email = this.params[0] as string;
+      return users.filter((u) => u.email === email).map((u) => ({ ...u }));
+    }
+
+    // Filter by ID
+    if (this.query.includes('id = ?')) {
+      const id = this.params[0] as string;
+      return users.filter((u) => u.id === id).map((u) => ({ ...u }));
+    }
+
+    // Filter by Google ID
+    if (this.query.includes('google_id = ?')) {
+      const googleId = this.params[0] as string;
+      return users.filter((u) => u.google_id === googleId).map((u) => ({ ...u }));
+    }
+
+    // Filter by Apple ID
+    if (this.query.includes('apple_id = ?')) {
+      const appleId = this.params[0] as string;
+      return users.filter((u) => u.apple_id === appleId).map((u) => ({ ...u }));
+    }
+
+    // Get all users with limit/offset
+    const limit = this.params[0] as number || 100;
+    const offset = this.params[1] as number || 0;
+    return users
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(offset, offset + limit)
+      .map((u) => ({ ...u }));
+  }
+
+  private handleCallSelect(): Record<string, unknown>[] {
+    const calls = this.db.getCalls();
+    let filteredCalls = [...calls];
+
+    // Filter by user ID
+    if (this.query.includes('user_id = ?')) {
+      const userIdIndex = this.params.findIndex((p) => typeof p === 'string' && p.startsWith('demo-user'));
+      if (userIdIndex !== -1) {
+        const userId = this.params[userIdIndex] as string;
+        filteredCalls = filteredCalls.filter((c) => c.user_id === userId);
+      }
+    }
+
+    // Filter by ID
+    if (this.query.includes('id = ?') && !this.query.includes('user_id')) {
+      const id = this.params[0] as string;
+      return calls.filter((c) => c.id === id).map((c) => ({ ...c }));
+    }
+
+    // Filter by status
+    if (this.query.includes('status = ?')) {
+      const status = this.params[this.params.length - 3] as string;
+      filteredCalls = filteredCalls.filter((c) => c.status === status);
+    }
+
+    // Filter by outcome
+    if (this.query.includes('outcome = ?')) {
+      const outcome = this.params[this.params.length - 3] as string;
+      filteredCalls = filteredCalls.filter((c) => c.outcome === outcome);
+    }
+
+    // Filter by phone number (LIKE)
+    if (this.query.includes('phone_number LIKE ?')) {
+      const phoneNumber = this.params[this.params.length - 3] as string;
+      const searchTerm = phoneNumber.replace(/%/g, '');
+      filteredCalls = filteredCalls.filter((c) => c.phone_number.includes(searchTerm));
+    }
+
+    // Filter by date range
+    if (this.query.includes('call_date >= ? AND call_date <= ?')) {
+      const startDate = this.params[1] as string;
+      const endDate = this.params[2] as string;
+      filteredCalls = filteredCalls.filter(
+        (c) => c.call_date >= startDate && c.call_date <= endDate
+      );
+    }
+
+    // Sort by call_date DESC
+    filteredCalls.sort((a, b) => b.call_date.localeCompare(a.call_date));
+
+    // Apply limit and offset
+    const limit = this.params[this.params.length - 2] as number || 25;
+    const offset = this.params[this.params.length - 1] as number || 0;
+    return filteredCalls.slice(offset, offset + limit).map((c) => ({ ...c }));
+  }
+
+  private handleSessionSelect(): Record<string, unknown>[] {
+    const sessions = this.db.getSessions();
+
+    // Filter by ID
+    if (this.query.includes('id = ?')) {
+      const id = this.params[0] as string;
+      return sessions.filter((s) => s.id === id).map((s) => ({ ...s }));
+    }
+
+    return sessions.map((s) => ({ ...s }));
+  }
+
+  private handleAuditLogSelect(): Record<string, unknown>[] {
+    const auditLogs = this.db.getAuditLogs();
+    let filteredLogs = [...auditLogs];
+
+    // Filter by user ID
+    if (this.query.includes('user_id = ?')) {
+      const userId = this.params[0] as string;
+      filteredLogs = filteredLogs.filter((log) => log.user_id === userId);
+    }
+
+    // Filter by event type
+    if (this.query.includes('event_type = ?')) {
+      const eventType = this.params[this.params.length - 3] as string;
+      filteredLogs = filteredLogs.filter((log) => log.event_type === eventType);
+    }
+
+    // Filter by date range
+    if (this.query.includes('created_at >= ? AND created_at <= ?')) {
+      const startDate = this.params[1] as string;
+      const endDate = this.params[2] as string;
+      filteredLogs = filteredLogs.filter(
+        (log) => log.created_at >= startDate && log.created_at <= endDate
+      );
+    }
+
+    // Sort by created_at DESC
+    filteredLogs.sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+    // Apply limit and offset
+    const limit = this.params[this.params.length - 2] as number || 50;
+    const offset = this.params[this.params.length - 1] as number || 0;
+    return filteredLogs.slice(offset, offset + limit).map((log) => ({ ...log }));
+  }
+
+  private handleAggregateSelect(): Record<string, unknown>[] {
+    const calls = this.db.getCalls();
+
+    // Call metrics query
+    if (this.query.includes('from calls') && this.query.includes('user_id = ?')) {
+      const userId = this.params[0] as string;
+      const userCalls = calls.filter((c) => c.user_id === userId);
+
+      const total = userCalls.length;
+      const completed = userCalls.filter((c) => c.status === 'completed').length;
+      const missed = userCalls.filter((c) => c.status === 'missed').length;
+      const failed = userCalls.filter((c) => c.status === 'failed').length;
+      const completedWithDuration = userCalls.filter(
+        (c) => c.status === 'completed' && c.duration !== null
+      );
+      const avgDuration =
+        completedWithDuration.length > 0
+          ? completedWithDuration.reduce((sum, c) => sum + (c.duration || 0), 0) /
+            completedWithDuration.length
+          : 0;
+
+      return [
+        {
+          total_calls: total,
+          completed_calls: completed,
+          missed_calls: missed,
+          failed_calls: failed,
+          avg_duration: avgDuration,
+        },
+      ];
+    }
+
+    // Count queries
+    if (this.query.includes('count(*)')) {
+      if (this.query.includes('from users')) {
+        return [{ count: this.db.getUsers().length }];
+      }
+      if (this.query.includes('from sessions')) {
+        return [{ count: this.db.getSessions().length }];
+      }
+      if (this.query.includes('from calls')) {
+        return [{ count: this.db.getCalls().length }];
+      }
+      if (this.query.includes('from audit_log')) {
+        return [{ count: this.db.getAuditLogs().length }];
+      }
+    }
+
+    return [];
+  }
+
+  private executeUpdate(): { rows: number | null; last_row_id: number | null } {
+    const lowerQuery = this.query.toLowerCase();
+
+    // INSERT operations
+    if (lowerQuery.startsWith('insert into users')) {
+      const user: User = {
+        id: this.params[0] as string,
+        email: this.params[1] as string,
+        password_hash: this.params[2] as string | null,
+        name: this.params[3] as string,
+        image: this.params[4] as string | null,
+        google_id: this.params[5] as string | null,
+        apple_id: this.params[6] as string | null,
+        created_at: this.params[7] as string,
+        updated_at: this.params[8] as string,
+      };
+      this.db.addUser(user);
+      return { rows: 1, last_row_id: parseInt(user.id.slice(-1)) };
+    }
+
+    if (lowerQuery.startsWith('insert into sessions')) {
+      const session: Session = {
+        id: this.params[0] as string,
+        user_id: this.params[1] as string,
+        expires_at: this.params[2] as string,
+        data: this.params[3] as string,
+        created_at: this.params[4] as string,
+      };
+      this.db.addSession(session);
+      return { rows: 1, last_row_id: 1 };
+    }
+
+    if (lowerQuery.startsWith('insert into calls')) {
+      const call: Call = {
+        id: this.params[0] as string,
+        user_id: this.params[1] as string,
+        phone_number: this.params[2] as string,
+        duration: this.params[3] as number | null,
+        status: this.params[4] as string,
+        outcome: this.params[5] as string | null,
+        transcript: this.params[6] as string | null,
+        call_date: this.params[7] as string,
+        created_at: this.params[8] as string,
+      };
+      this.db.addCall(call);
+      return { rows: 1, last_row_id: 1 };
+    }
+
+    if (lowerQuery.startsWith('insert into audit_log')) {
+      const auditLog: AuditLog = {
+        id: this.db.getAuditLogs().length + 1,
+        user_id: this.params[0] as string,
+        event_type: this.params[1] as string,
+        ip_address: this.params[2] as string | null,
+        user_agent: this.params[3] as string | null,
+        created_at: this.params[4] as string,
+      };
+      this.db.addAuditLog(auditLog);
+      return { rows: 1, last_row_id: auditLog.id };
+    }
+
+    // UPDATE operations
+    if (lowerQuery.startsWith('update users')) {
+      const id = this.params[this.params.length - 1] as string;
+      const updates: Partial<User> = {};
+
+      if (this.query.includes('name = ?')) {
+        let paramIndex = 0;
+        if (this.query.includes('name = ?') && this.query.includes('image = ?')) {
+          updates.name = this.params[paramIndex++] as string;
+          updates.image = this.params[paramIndex++] as string | null;
+        } else {
+          updates.name = this.params[0] as string;
+        }
+      }
+      if (this.query.includes('image = ?') && !updates.image) {
+        updates.image = this.params[0] as string | null;
+      }
+      if (this.query.includes('password_hash = ?')) {
+        updates.password_hash = this.params[0] as string | null;
+      }
+      if (this.query.includes('google_id = ?')) {
+        updates.google_id = this.params[0] as string | null;
+      }
+      if (this.query.includes('apple_id = ?')) {
+        updates.apple_id = this.params[0] as string | null;
+      }
+
+      this.db.updateUser(id, updates);
+      return { rows: 1, last_row_id: null };
+    }
+
+    if (lowerQuery.startsWith('update calls')) {
+      const id = this.params[this.params.length - 1] as string;
+      const calls = this.db.getCalls();
+      const index = calls.findIndex((c) => c.id === id);
+      if (index !== -1) {
+        calls[index] = {
+          ...calls[index],
+          phone_number: this.params[0] as string,
+          duration: this.params[1] as number | null,
+          status: this.params[2] as string,
+          outcome: this.params[3] as string | null,
+          transcript: this.params[4] as string | null,
+          call_date: this.params[5] as string,
+        };
+      }
+      return { rows: 1, last_row_id: null };
+    }
+
+    // DELETE operations
+    if (lowerQuery.startsWith('delete from users')) {
+      const id = this.params[0] as string;
+      this.db.deleteUser(id);
+      return { rows: 1, last_row_id: null };
+    }
+
+    if (lowerQuery.startsWith('delete from sessions')) {
+      if (this.query.includes('id = ?')) {
+        const id = this.params[0] as string;
+        this.db.deleteSession(id);
+      } else if (this.query.includes('user_id = ?')) {
+        const userId = this.params[0] as string;
+        const sessions = this.db.getSessions().filter((s) => s.user_id !== userId);
+        // Update sessions in db (hacky but works for mock)
+        (this.db as any).sessions = sessions;
+      } else if (this.query.includes('expires_at < ?')) {
+        const date = this.params[0] as string;
+        this.db.deleteSessionsBefore(date);
+      }
+      return { rows: 1, last_row_id: null };
+    }
+
+    if (lowerQuery.startsWith('delete from calls')) {
+      if (this.query.includes('id = ?')) {
+        const id = this.params[0] as string;
+        this.db.deleteCall(id);
+      } else if (this.query.includes('user_id = ?')) {
+        const userId = this.params[0] as string;
+        const calls = this.db.getCalls().filter((c) => c.user_id !== userId);
+        (this.db as any).calls = calls;
+      }
+      return { rows: 1, last_row_id: null };
+    }
+
+    if (lowerQuery.startsWith('delete from audit_log')) {
+      const userId = this.params[0] as string;
+      const beforeDate = this.params[1] as string;
+      this.db.deleteOldAuditLogs(userId, beforeDate);
+      return { rows: 1, last_row_id: null };
+    }
+
+    return { rows: 0, last_row_id: null };
+  }
+}
+
+/**
  * Get D1 database instance from environment
  * This function works in both development and production
  *
@@ -106,6 +770,16 @@ export interface DbResult<T> {
  * const users = await getAllUsers(db);
  */
 export function getDb(env?: Env): D1Database {
+  // Check if demo mode is enabled
+  if (process.env.DEMO_MODE === 'true') {
+    // Return a singleton instance of the mock database
+    if (!(globalThis as any).__mockDbInstance) {
+      (globalThis as any).__mockDbInstance = new MockD1Database();
+      console.log('[Demo Mode] Mock database initialized with sample data');
+    }
+    return (globalThis as any).__mockDbInstance;
+  }
+
   // In Next.js with @cloudflare/next-on-pages, process.env contains the D1 binding
   // In development with wrangler pages dev, the binding is also available
   if (env?.DB) {
@@ -117,7 +791,8 @@ export function getDb(env?: Env): D1Database {
   const envWithDb = process.env as unknown as Env;
   if (!envWithDb?.DB) {
     throw new Error(
-      'D1 database binding not found. Make sure DB is bound in wrangler.toml and you are running in a Cloudflare Pages or Workers environment.'
+      'D1 database binding not found. Make sure DB is bound in wrangler.toml and you are running in a Cloudflare Pages or Workers environment.\n\n' +
+      'To enable demo mode (for Vercel or local development), set DEMO_MODE=true in your environment.'
     );
   }
   return envWithDb.DB;
