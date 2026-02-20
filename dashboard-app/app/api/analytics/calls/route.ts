@@ -89,6 +89,9 @@ export async function GET(request: NextRequest) {
         { success: false, error: 'Unauthorized' },
         { status: 401 }
       );
+    // Get database instance
+    const db = getDb();
+
     }
 
     // Parse query parameters
@@ -143,15 +146,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get D1 database instance
-    const db = getDb();
-
     // Fetch calls within date range for the authenticated user
-    const callsResult = await getCallsByDateRange(
-      db,
-      session.user.id,
+    const callsResult = await getCallsByDateRange(db, 
       startDate,
-      endDate
+      endDate,
+      session.user.id
     );
 
     // Check if query was successful

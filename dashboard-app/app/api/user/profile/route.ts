@@ -69,6 +69,9 @@ export async function PATCH(request: NextRequest) {
         { success: false, error: 'Unauthorized' } as UpdateProfileResponse,
         { status: 401 }
       );
+    // Get database instance
+    const db = getDb();
+
     }
 
     // Parse request body
@@ -92,9 +95,6 @@ export async function PATCH(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    // Get D1 database instance
-    const db = getDb();
 
     // Update user in database
     const updateResult: DbResult<{ id: string; name: string }> = await updateUser(db, session.user.id, {

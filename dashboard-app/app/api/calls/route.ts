@@ -106,6 +106,9 @@ export async function GET(request: NextRequest) {
         { success: false, error: 'Unauthorized' },
         { status: 401 }
       );
+    // Get database instance
+    const db = getDb();
+
     }
 
     // Parse query parameters
@@ -152,26 +155,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get D1 database instance
-    const db = getDb();
-
     // Fetch calls based on filters
     let callsResult: { success: boolean; data?: Call[]; error?: string };
 
     if (startDate && endDate) {
-      // Date range filter
-      callsResult = await getCallsByDateRange(
-        db,
+      // Date range filter (startDate/endDate are ISO strings from query params)
+      callsResult = await getCallsByDateRange(db, 
+        startDate,
+        endDate,
         userId,
-        new Date(startDate),
-        new Date(endDate),
         limit,
         offset
       );
     } else if (status) {
       // Status filter
-      callsResult = await getCallsByStatus(
-        db,
+      callsResult = await getCallsByStatus(db, 
         userId,
         status,
         limit,
@@ -179,8 +177,7 @@ export async function GET(request: NextRequest) {
       );
     } else if (phoneNumber) {
       // Phone number search
-      callsResult = await getCallsByPhoneNumber(
-        db,
+      callsResult = await getCallsByPhoneNumber(db, 
         userId,
         phoneNumber,
         limit,
@@ -188,8 +185,7 @@ export async function GET(request: NextRequest) {
       );
     } else {
       // No filters, get all calls for user
-      callsResult = await getCallsByUserId(
-        db,
+      callsResult = await getCallsByUserId(db, 
         userId,
         limit,
         offset

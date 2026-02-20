@@ -78,6 +78,9 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'Unauthorized' } as ChangePasswordResponse,
         { status: 401 }
       );
+    // Get database instance
+    const db = getDb();
+
     }
 
     // Parse request body
@@ -114,9 +117,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    // Get D1 database instance
-    const db = getDb();
 
     // Fetch user from database
     const userResult: DbResult<User> = await getUserById(db, session.user.id);
