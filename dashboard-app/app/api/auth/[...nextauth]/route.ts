@@ -19,7 +19,7 @@ import type { NextAuthConfig } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import AppleProvider from 'next-auth/providers/apple';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { getUserByEmail, getUserByGoogleId, getUserByAppleId, createUser, updateUser } from '@/lib/db';
+import { getDb, getUserByEmail, getUserByGoogleId, getUserByAppleId, createUser, updateUser } from '@/lib/db';
 import { verifyPassword, validatePasswordStrength } from '@/lib/auth';
 
 // ============================================================================
@@ -139,14 +139,8 @@ export const authConfig: NextAuthConfig = {
         }
 
         try {
-          // Get D1 database instance
-          const env = process.env as unknown as { DB?: D1Database };
-          const db = env?.DB;
-
-          if (!db) {
-            // Database not available - deny sign-in
-            return null;
-          }
+          // Get database instance
+          const db = getDb();
 
           // Look up user by email
           const user = await getUserByEmail(db, credentials.email as string);
@@ -254,15 +248,8 @@ export const authConfig: NextAuthConfig = {
     }
 
     try {
-      // Get D1 database instance
-      // In Next.js with Cloudflare Pages, DB binding is available via process.env
-      const env = process.env as unknown as { DB?: D1Database };
-      const db = env?.DB;
-
-      if (!db) {
-        // Database not available - deny sign-in
-        return false;
-      }
+      // Get database instance
+      const db = getDb();
 
       // Google OAuth sign-in
       if (account?.provider === 'google') {
@@ -405,10 +392,10 @@ export const authConfig: NextAuthConfig = {
     // Initial sign-in: attach user ID to token
     if (user && account) {
       try {
-        const env = process.env as unknown as { DB?: D1Database };
-        const db = env?.DB;
+        if (user.email) {
+          // Get database instance
+          const db = getDb();
 
-        if (db && user.email) {
           // Look up user by email to get database ID
           const dbUser = await getUserByEmail(db, user.email);
 
@@ -445,7 +432,7 @@ export const authConfig: NextAuthConfig = {
    * // In a Server Component:
    * // const session = await getServerSession();
    * // if (session?.user?.id) {
-   * //   const calls = await getCallsByUserId(db, session.user.id);
+   * //   const calls = await getCallsByUserId(session.user.id);
    * // }
    */
   async session({ session, token }) {
