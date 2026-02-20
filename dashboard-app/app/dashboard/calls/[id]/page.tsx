@@ -108,11 +108,9 @@ export default async function CallDetailsPage({
   }
 
   const callId = params.id;
-
-  // Get D1 database instance
   const db = getDb();
 
-  // Fetch call from D1 cache first
+  // Fetch call from database cache first
   const cachedCall = await getCallById(db, callId);
 
   // Fetch full details from Retell API (for transcript and metadata)

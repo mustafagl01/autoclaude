@@ -48,16 +48,13 @@ export default async function CallsListPage() {
   if (!session || !session.user?.id) {
     redirect('/login');
   }
-
-  // Get D1 database instance
   const db = getDb();
 
   // Fetch initial calls (first page, 25 per page)
   const initialLimit = 25;
   const initialOffset = 0;
   const callsResult = await getCallsByUserId(
-    db,
-    session.user.id,
+    db, session.user.id,
     initialLimit,
     initialOffset
   );

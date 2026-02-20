@@ -62,8 +62,7 @@ export default async function DashboardPage() {
   if (!session || !session.user?.id) {
     redirect('/login');
   }
-
-  // Get D1 database instance
+  // Get database instance
   const db = getDb();
 
   // Fetch call metrics for the user
