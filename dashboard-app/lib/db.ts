@@ -141,8 +141,7 @@ export async function updateUser(
 ): Promise<DbResult<User>> {
   try {
     const now = new Date().toISOString();
-    const setRetellKey = updates.retell_api_key !== undefined;
-    const retellKeyValue = setRetellKey ? (updates.retell_api_key || null) : null;
+    const retellKeyValue = updates.retell_api_key !== undefined ? (updates.retell_api_key ?? null) : null;
     const { rows } = await sql<User>`
       UPDATE users SET
         name = COALESCE(${updates.name ?? null}, name),
@@ -150,7 +149,7 @@ export async function updateUser(
         password_hash = COALESCE(${updates.password_hash ?? null}, password_hash),
         google_id = COALESCE(${updates.google_id ?? null}, google_id),
         apple_id = COALESCE(${updates.apple_id ?? null}, apple_id),
-        ${setRetellKey ? sql`retell_api_key = ${retellKeyValue},` : sql``}
+        retell_api_key = COALESCE(${retellKeyValue}, (SELECT u.retell_api_key FROM users u WHERE u.id = ${id})),
         updated_at = ${now}
       WHERE id = ${id}
       RETURNING *
