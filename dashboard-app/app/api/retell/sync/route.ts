@@ -49,8 +49,7 @@ export async function POST(): Promise<NextResponse> {
   let failed = 0;
 
   for (const call of calls) {
-    // If cost is missing from list endpoint, fetch individual call details
-    let costCents = call.call_cost_cents ?? null;
+    let costCents = call.call_cost_cents ?? (call.call_cost?.combined_cost != null && call.call_cost.combined_cost >= 0 ? Math.round(call.call_cost.combined_cost) : null);
     if (costCents == null && call.call_id) {
       try {
         const detailResult = await getCallDetailsViaApi(call.call_id, apiKey);
@@ -58,7 +57,7 @@ export async function POST(): Promise<NextResponse> {
           costCents = Math.round(detailResult.data.call_cost.combined_cost);
         }
       } catch {
-        // silently ignore, cost stays null
+        // ignore, cost stays null
       }
     }
 
@@ -71,13 +70,10 @@ export async function POST(): Promise<NextResponse> {
       outcome: call.outcome ?? null,
       transcript: call.transcript ?? null,
       recording_url: call.recording_url ?? null,
-      call_cost_cents: costCents,
+      call_cost_cents: costCents ?? undefined,
       call_date: call.start_time || new Date().toISOString(),
     });
-
     if (cacheResult.success) {
-      // If we fetched cost separately and cacheCall used COALESCE (won't overwrite existing),
-      // force update cost if we have a value
       if (costCents != null && cacheResult.data?.call_cost_cents == null) {
         await updateCallCost(call.call_id, costCents);
       }

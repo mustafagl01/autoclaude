@@ -42,6 +42,8 @@ export interface RetellCall {
     confidence?: number;
     categories?: string[];
   } | null;
+  /** Cost when returned by list-calls (not always present; use get-call for full details) */
+  call_cost?: RetellCallCost | null;
 }
 
 /**
@@ -380,6 +382,23 @@ function transformRetellCallFromV2(raw: Record<string, unknown>): RetellCall {
   };
   const status = (statusMap[callStatus] || callStatus) as CallStatus;
 
+  let call_cost: RetellCall['call_cost'] = null;
+  if (raw.call_cost && typeof raw.call_cost === 'object') {
+    const c = raw.call_cost as Record<string, unknown>;
+    const combined = c.combined_cost != null ? Number(c.combined_cost) : 0;
+    call_cost = {
+      combined_cost: combined,
+      total_duration_seconds: c.total_duration_seconds != null ? Number(c.total_duration_seconds) : undefined,
+      product_costs: Array.isArray(c.product_costs)
+        ? (c.product_costs as Array<Record<string, unknown>>).map((p) => ({
+            product: String(p.product ?? ''),
+            cost: Number(p.cost ?? 0),
+            unit_price: p.unit_price != null ? Number(p.unit_price) : undefined,
+          }))
+        : undefined,
+    };
+  }
+
   return {
     call_id: String(raw.call_id || raw.id || ''),
     phone_number: phone,
@@ -393,7 +412,8 @@ function transformRetellCallFromV2(raw: Record<string, unknown>): RetellCall {
     transcript: raw.transcript ? String(raw.transcript) : null,
     recording_url: raw.recording_url ? String(raw.recording_url) : null,
     call_analysis: raw.call_analysis ? (raw.call_analysis as RetellCall['call_analysis']) : null,
-    call_cost_cents: extractCallCostCents(raw),
+    call_cost,
+    call_cost_cents: call_cost?.combined_cost != null ? Math.round(call_cost.combined_cost) : null,
   };
 }
 
