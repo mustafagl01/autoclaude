@@ -15,8 +15,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
-import { authConfig } from './app/api/auth/[...nextauth]/route';
-import NextAuth from 'next-auth';
 
 // ============================================================================
 // Type Definitions
@@ -112,6 +110,11 @@ function isPublicRoute(pathname: string): boolean {
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
+  // Same secret as NextAuth route (fallback so Edge and API sign/decode the same JWT)
+  const secret = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || 'mgl-fallback-secret-12345';
+  // In production (HTTPS) NextAuth uses __Secure-authjs.session-token; getToken must look for it
+  const secureCookie = request.nextUrl.protocol === 'https:';
+
   // Allow public routes to pass through
   if (isPublicRoute(pathname)) {
     // If user is already authenticated and on login page, redirect to dashboard
@@ -119,7 +122,8 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
       try {
         const token = await getToken({
           req: request,
-          secret: process.env.NEXTAUTH_SECRET,
+          secret,
+          secureCookie,
         });
 
         if (token) {
@@ -140,7 +144,8 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     try {
       const token = await getToken({
         req: request,
-        secret: process.env.NEXTAUTH_SECRET,
+        secret,
+        secureCookie,
       });
 
       if (!token) {
