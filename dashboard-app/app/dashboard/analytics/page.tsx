@@ -16,6 +16,7 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import AnalyticsChart from '@/components/AnalyticsChart'
 import type { Call } from '@/lib/db'
 
@@ -273,7 +274,7 @@ export default function AnalyticsPage() {
 
         {/* Analytics Metrics */}
         {calls.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
             <MetricCard
               title="Total Calls"
               value={metrics.totalCalls}
@@ -316,6 +317,27 @@ export default function AnalyticsPage() {
               }
               color="orange"
             />
+            <MetricCard
+              title="Total Cost"
+              value={metrics.totalCostCents > 0 ? `$${(metrics.totalCostCents / 100).toFixed(2)}` : 'N/A'}
+              icon={
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              }
+              color="green"
+            />
+            <MetricCard
+              title="Cost / Min"
+              value={metrics.costPerMinuteCents > 0 ? `$${(metrics.costPerMinuteCents / 100).toFixed(3)}` : 'N/A'}
+              subtitle="avg per minute"
+              icon={
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              }
+              color="orange"
+            />
           </div>
         )}
 
@@ -346,7 +368,10 @@ export default function AnalyticsPage() {
             </p>
           </div>
         ) : (
-          <AnalyticsChart calls={calls} />
+          <>
+            <AnalyticsChart calls={calls} />
+            <RecentCallsTable calls={[...calls].sort((a, b) => new Date(b.call_date).getTime() - new Date(a.call_date).getTime()).slice(0, 5)} />
+          </>
         )}
       </div>
     </div>
@@ -377,6 +402,13 @@ function calculateAnalyticsMetrics(calls: Call[]) {
     : 0
   const completionRate = totalCalls > 0 ? (completedCalls / totalCalls) * 100 : 0
 
+  // Cost metrics: only from calls that have call_cost_cents
+  const callsWithCost = calls.filter(c => c.call_cost_cents != null && c.call_cost_cents >= 0)
+  const totalCostCents = callsWithCost.reduce((sum, c) => sum + (c.call_cost_cents ?? 0), 0)
+  const totalDurationMinutes = callsWithCost.reduce((sum, c) => sum + (c.duration ?? 0), 0) / 60
+  const costPerMinuteCents = totalDurationMinutes > 0 ? totalCostCents / totalDurationMinutes : 0
+  const avgCostPerCallCents = callsWithCost.length > 0 ? totalCostCents / callsWithCost.length : 0
+
   // Calculate peak hour
   const hourCounts: Record<number, number> = {}
   calls.forEach(call => {
@@ -400,6 +432,9 @@ function calculateAnalyticsMetrics(calls: Call[]) {
     completionRate,
     peakHour,
     peakHourCount,
+    totalCostCents,
+    costPerMinuteCents,
+    avgCostPerCallCents,
   }
 }
 
@@ -446,6 +481,78 @@ function MetricCard({ title, value, subtitle, icon, color }: MetricCardProps) {
         </div>
         <div className="flex-shrink-0 ml-3 opacity-80">{icon}</div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Recent Calls mini table (last 5 by date)
+ */
+function RecentCallsTable({ calls }: { calls: Call[] }) {
+  const statusColors: Record<string, string> = {
+    completed: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    missed: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+    failed: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+    in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    cancelled: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
+  }
+
+  function formatDuration(seconds: number | null): string {
+    if (seconds == null) return '-'
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mt-8">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Calls</h2>
+        <Link
+          href="/dashboard/calls"
+          className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+        >
+          View All →
+        </Link>
+      </div>
+      {calls.length === 0 ? (
+        <p className="text-sm text-gray-500 dark:text-gray-400">No calls yet</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead>
+              <tr>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date & Time</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Phone</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Duration</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Cost</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {calls.map((call) => {
+                const d = new Date(call.call_date)
+                const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+                const timeStr = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                const badgeClass = statusColors[call.status] || statusColors.cancelled
+                return (
+                  <tr key={call.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{dateStr} {timeStr}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{call.phone_number}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{formatDuration(call.duration)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{call.call_cost_cents != null ? `$${(call.call_cost_cents / 100).toFixed(2)}` : '-'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${badgeClass}`}>
+                        {call.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
