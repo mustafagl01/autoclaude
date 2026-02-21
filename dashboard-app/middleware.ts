@@ -14,6 +14,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 import { authConfig } from './app/api/auth/[...nextauth]/route';
 import NextAuth from 'next-auth';
 
@@ -116,51 +117,41 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     // If user is already authenticated and on login page, redirect to dashboard
     if (pathname === '/login') {
       try {
-        // Get session from cookies
-        const sessionToken = request.cookies.get('next-auth.session-token')?.value ||
-                            request.cookies.get('__Secure-next-auth.session-token')?.value;
+        const token = await getToken({
+          req: request,
+          secret: process.env.NEXTAUTH_SECRET,
+        });
 
-        if (sessionToken) {
-          // User is already logged in, redirect to dashboard
+        if (token) {
           const url = request.nextUrl.clone();
           url.pathname = '/dashboard';
           return NextResponse.redirect(url);
         }
       } catch {
-        // If session validation fails, continue to login page
+        // If token validation fails, continue to login page
       }
     }
 
-    // Allow access to public route
     return NextResponse.next();
   }
 
   // Check if the route is protected
   if (isProtectedRoute(pathname)) {
     try {
-      // Get session from cookies
-      // Try both development and production cookie names
-      const sessionToken = request.cookies.get('next-auth.session-token')?.value ||
-                          request.cookies.get('__Secure-next-auth.session-token')?.value;
+      const token = await getToken({
+        req: request,
+        secret: process.env.NEXTAUTH_SECRET,
+      });
 
-      if (!sessionToken) {
-        // No session token found, redirect to login
+      if (!token) {
         const url = request.nextUrl.clone();
         url.pathname = '/login';
-        // Add return URL to redirect back after login
         url.searchParams.set('callbackUrl', pathname);
         return NextResponse.redirect(url);
       }
 
-      // Validate session with NextAuth
-      // Note: In Next.js 15 with NextAuth v5, we use the authConfig directly
-      // The session validation happens via JWT verification in NextAuth internals
-      // For middleware, we primarily check for the presence of the session token
-
-      // Allow access to protected route
       return NextResponse.next();
-    } catch (error) {
-      // If session validation fails, redirect to login
+    } catch {
       const url = request.nextUrl.clone();
       url.pathname = '/login';
       url.searchParams.set('callbackUrl', pathname);
