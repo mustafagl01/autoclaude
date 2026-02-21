@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/app/api/auth/[...nextauth]/route';
-import { listCallsViaApi } from '@/lib/retell';
-import { getUserById, cacheCall } from '@/lib/db';
+import { listCallsViaApi, getCallDetailsViaApi } from '@/lib/retell';
+import { getUserById, cacheCall, updateCallCost } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
@@ -9,6 +9,9 @@ export const runtime = 'nodejs';
  * POST /api/retell/sync
  * Fetches calls from Retell API and caches them in Postgres for the current user.
  * Uses the user's Retell API key stored in Profile (per-user). If none set, returns 400.
+ * 
+ * For calls where call_cost_cents is missing from the list endpoint,
+ * we fetch the individual call details to get the cost.
  */
 export async function POST(): Promise<NextResponse> {
   const session = await auth();
@@ -46,6 +49,19 @@ export async function POST(): Promise<NextResponse> {
   let failed = 0;
 
   for (const call of calls) {
+    // If cost is missing from list endpoint, fetch individual call details
+    let costCents = call.call_cost_cents ?? null;
+    if (costCents == null && call.call_id) {
+      try {
+        const detailResult = await getCallDetailsViaApi(call.call_id, apiKey);
+        if (detailResult.success && detailResult.data?.call_cost?.combined_cost != null) {
+          costCents = Math.round(detailResult.data.call_cost.combined_cost);
+        }
+      } catch {
+        // silently ignore, cost stays null
+      }
+    }
+
     const cacheResult = await cacheCall({
       id: call.call_id,
       user_id: session.user.id,
@@ -55,11 +71,20 @@ export async function POST(): Promise<NextResponse> {
       outcome: call.outcome ?? null,
       transcript: call.transcript ?? null,
       recording_url: call.recording_url ?? null,
-      call_cost_cents: call.call_cost_cents ?? null,
+      call_cost_cents: costCents,
       call_date: call.start_time || new Date().toISOString(),
     });
-    if (cacheResult.success) synced++;
-    else failed++;
+
+    if (cacheResult.success) {
+      // If we fetched cost separately and cacheCall used COALESCE (won't overwrite existing),
+      // force update cost if we have a value
+      if (costCents != null && cacheResult.data?.call_cost_cents == null) {
+        await updateCallCost(call.call_id, costCents);
+      }
+      synced++;
+    } else {
+      failed++;
+    }
   }
 
   return NextResponse.json({
