@@ -62,6 +62,11 @@ export default function Navbar({ className = '' }: NavbarProps) {
       description: 'Overview and metrics',
     },
     {
+      href: '/orders',
+      label: 'Siparişler',
+      description: 'Tüm siparişler',
+    },
+    {
       href: '/dashboard/calls',
       label: 'Calls',
       description: 'Phone call history',
@@ -70,6 +75,11 @@ export default function Navbar({ className = '' }: NavbarProps) {
       href: '/dashboard/analytics',
       label: 'Analytics',
       description: 'Performance insights',
+    },
+    {
+      href: '/settings/integrations',
+      label: 'Entegrasyonlar',
+      description: 'HubRise ve diğer bağlantılar',
     },
     {
       href: '/dashboard/profile',
