@@ -9,10 +9,10 @@ const callbackUrl = '/dashboard'
 
 const ERROR_MESSAGES: Record<string, string> = {
   AccessDenied: 'Giriş reddedildi. Hesap veya izin sorunu olabilir.',
-  Configuration: 'Sunucu yapılandırma hatası. Vercel → Settings → Environment Variables içinde GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET ve NEXTAUTH_URL kontrol edin. NEXTAUTH_URL: https://autoclaude.vercel.app olmalı.',
+  Configuration: 'Sunucu yapılandırma hatası. Vercel veya Cloudflare → Settings → Environment Variables içinde GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET ve NEXTAUTH_URL kontrol edin. NEXTAUTH_URL: https://www.mglsystems.uk olmalı.',
   Verification: 'Doğrulama hatası. E-posta adresi kullanılamıyor olabilir.',
   OAuthSignin: 'Google yönlendirme hatası.',
-  OAuthCallback: 'Google geri dönüş hatası. Google Cloud Console\'da Authorized Redirect URI: https://autoclaude.vercel.app/api/auth/callback/google olmalı.',
+  OAuthCallback: 'Google geri dönüş hatası. Google Cloud Console\'da Authorized Redirect URI: https://www.mglsystems.uk/api/auth/callback/google ekli mi?',
   OAuthCreateAccount: 'Hesap oluşturulamadı.',
   Callback: 'Giriş geri çağrı hatası.',
   Default: 'Google ile giriş sırasında bir hata oluştu.',
@@ -122,9 +122,9 @@ export default function LoginPage() {
                 <div className="mt-2 text-xs text-red-700 dark:text-red-300 space-y-1">
                   <p><strong>Kontrol listesi:</strong></p>
                   <ul className="list-disc list-inside ml-2 space-y-0.5">
-                    <li>Vercel → Settings → Environment Variables → <code className="bg-black/10 px-1 rounded">NEXTAUTH_URL</code> = <code className="bg-black/10 px-1 rounded">https://autoclaude.vercel.app</code></li>
-                    <li>Vercel → Settings → Environment Variables → <code className="bg-black/10 px-1 rounded">GOOGLE_CLIENT_ID</code> ve <code className="bg-black/10 px-1 rounded">GOOGLE_CLIENT_SECRET</code> var mı?</li>
-                    <li>Google Cloud Console → Credentials → Authorized Redirect URIs → <code className="bg-black/10 px-1 rounded">https://autoclaude.vercel.app/api/auth/callback/google</code> ekli mi?</li>
+                    <li>Vercel/Cloudflare → Settings → Environment Variables → <code className="bg-black/10 px-1 rounded">NEXTAUTH_URL</code> = <code className="bg-black/10 px-1 rounded">https://www.mglsystems.uk</code></li>
+                    <li>Vercel/Cloudflare → Settings → Environment Variables → <code className="bg-black/10 px-1 rounded">GOOGLE_CLIENT_ID</code> ve <code className="bg-black/10 px-1 rounded">GOOGLE_CLIENT_SECRET</code> var mı?</li>
+                    <li>Google Cloud Console → Credentials → Authorized Redirect URIs → <code className="bg-black/10 px-1 rounded">https://www.mglsystems.uk/api/auth/callback/google</code> ekli mi?</li>
                   </ul>
                   <p className="mt-2">Vercel loglarında &quot;[NextAuth]&quot; ile arayarak detay görebilirsin.</p>
                 </div>
