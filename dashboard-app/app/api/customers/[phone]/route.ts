@@ -1,12 +1,11 @@
 /**
- * Customer CRM API
+ * Customer CRM API (Vercel Postgres)
  * GET /api/customers/[phone] - Get customer info and recent orders
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from '@/lib/auth';
-import { getDb } from '@/lib/db';
-import { normalizePhoneNumber, centsToPounds, parseItems } from '@/lib/order-normalizer';
+import { auth } from '@/lib/auth';
+import { sql } from '@vercel/postgres';
 
 interface RouteContext {
   params: {
@@ -14,10 +13,26 @@ interface RouteContext {
   };
 }
 
+function normalizePhoneNumber(phone: string): string {
+  if (!phone) return '';
+  let cleaned = phone.replace(/\D/g, '');
+  if (cleaned.startsWith('0')) {
+    cleaned = '44' + cleaned.substring(1);
+  }
+  if (!cleaned.startsWith('44')) {
+    cleaned = '44' + cleaned;
+  }
+  return '+' + cleaned;
+}
+
+function centsToPounds(cents: number): string {
+  return `£${(cents / 100).toFixed(2)}`;
+}
+
 export async function GET(req: NextRequest, { params }: RouteContext) {
   try {
     // Check session
-    const session = await getServerSession();
+    const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -26,51 +41,32 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
     const normalizedPhone = normalizePhoneNumber(params.phone);
 
     // Get customer from database
-    const db = getDb();
-    const customer = db.prepare(`
+    const customerResult = await sql`
       SELECT * FROM customers
-      WHERE user_id = ? AND phone = ?
-    `).get(session.user.id, normalizedPhone) as {
-      id: number;
-      user_id: string;
-      phone: string;
-      name: string;
-      address: string;
-      postcode: string;
-      city: string;
-      total_orders: number;
-      total_spent_cents: number;
-      last_order_date: string;
-      created_at: string;
-    } | undefined;
+      WHERE user_id = ${session.user.id} AND phone = ${normalizedPhone}
+    `;
 
-    if (!customer) {
+    if (customerResult.rowCount === 0) {
       return NextResponse.json({
         found: false,
         message: 'Customer not found',
       });
     }
 
+    const customer = customerResult.rows[0];
+
     // Get recent orders for this customer
-    const recentOrders = db.prepare(`
+    const ordersResult = await sql`
       SELECT hubrise_order_id, platform_source, status,
              total_cents, currency, items, order_created_at
       FROM orders
-      WHERE user_id = ? AND customer_phone = ?
+      WHERE user_id = ${session.user.id} AND customer_phone = ${normalizedPhone}
       ORDER BY order_created_at DESC
       LIMIT 5
-    `).all(session.user.id, normalizedPhone) as Array<{
-      hubrise_order_id: string;
-      platform_source: string;
-      status: string;
-      total_cents: number;
-      currency: string;
-      items: string;
-      order_created_at: string;
-    }>;
+    `;
 
     // Format recent orders
-    const formattedOrders = recentOrders.map(order => ({
+    const recentOrders = ordersResult.rows.map((order: any) => ({
       id: order.hubrise_order_id,
       platform: order.platform_source,
       status: order.status,
@@ -78,7 +74,7 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
         amount: centsToPounds(order.total_cents),
         currency: order.currency,
       },
-      items: parseItems(order.items),
+      items: order.items || [], // JSONB array
       date: order.order_created_at,
     }));
 
@@ -101,7 +97,7 @@ export async function GET(req: NextRequest, { params }: RouteContext) {
           lastOrderDate: customer.last_order_date,
         },
       },
-      recentOrders: formattedOrders,
+      recentOrders,
     });
   } catch (error) {
     console.error('Customer API error:', error);

@@ -1,16 +1,16 @@
 /**
- * HubRise OAuth - Start Authorization
+ * HubRise OAuth - Start Authorization (Vercel Postgres)
  * Redirects user to HubRise OAuth page
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { getHubRiseClient } from '@/lib/hubrise-client';
 
 export async function GET(req: NextRequest) {
   try {
     // Check session
-    const session = await getServerSession();
+    const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

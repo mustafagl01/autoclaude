@@ -1,28 +1,27 @@
 /**
- * HubRise OAuth - Disconnect
+ * HubRise OAuth - Disconnect (Vercel Postgres)
  * Deactivates the HubRise connection
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from '@/lib/auth';
-import { getDb } from '@/lib/db';
+import { auth } from '@/lib/auth';
+import { sql } from '@vercel/postgres';
 
 export async function POST(req: NextRequest) {
   try {
     // Check session
-    const session = await getServerSession();
+    const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Deactivate all connections for this user
-    const db = getDb();
-    db.prepare(`
+    await sql`
       UPDATE hubrise_connections
-      SET is_active = 0,
-          updated_at = datetime('now')
-      WHERE user_id = ?
-    `).run(session.user.id);
+      SET is_active = false,
+          updated_at = NOW()
+      WHERE user_id = ${session.user.id}
+    `;
 
     return NextResponse.json({
       success: true,

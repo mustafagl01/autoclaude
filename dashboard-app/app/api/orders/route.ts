@@ -1,17 +1,20 @@
 /**
- * Orders API - List Orders
+ * Orders API - List Orders (Vercel Postgres)
  * GET /api/orders - List all orders for the authenticated user
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from '@/lib/auth';
-import { getDb } from '@/lib/db';
-import { parseItems, centsToPounds } from '@/lib/order-normalizer';
+import { auth } from '@/lib/auth';
+import { sql } from '@vercel/postgres';
+
+function centsToPounds(cents: number): string {
+  return `£${(cents / 100).toFixed(2)}`;
+}
 
 export async function GET(req: NextRequest) {
   try {
     // Check session
-    const session = await getServerSession();
+    const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -23,51 +26,26 @@ export async function GET(req: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0');
     const platform = searchParams.get('platform');
 
-    // Build query
+    // Build query dynamically
     let query = `
       SELECT * FROM orders
-      WHERE user_id = ?
+      WHERE user_id = ${session.user.id}
     `;
-    const params: any[] = [session.user.id];
 
     if (status) {
-      query += ' AND status = ?';
-      params.push(status);
+      query += ` AND status = ${status}`;
     }
-
     if (platform) {
-      query += ' AND platform_source = ?';
-      params.push(platform);
+      query += ` AND platform_source = ${platform}`;
     }
 
-    query += ' ORDER BY order_created_at DESC LIMIT ? OFFSET ?';
-    params.push(limit, offset);
+    query += ` ORDER BY order_created_at DESC LIMIT ${limit} OFFSET ${offset}`;
 
     // Get orders from database
-    const db = getDb();
-    const orders = db.prepare(query).all(...params) as Array<{
-      id: number;
-      hubrise_order_id: string;
-      user_id: string;
-      location_id: string;
-      platform_source: string;
-      status: string;
-      customer_name: string;
-      customer_phone: string;
-      customer_address: string;
-      customer_postcode: string;
-      customer_city: string;
-      total_cents: number;
-      total_cents_tax: number;
-      currency: string;
-      items: string;
-      order_created_at: string;
-      order_updated_at: string;
-      created_at: string;
-    }>;
+    const result = await sql.query(query);
 
-    // Parse items and format response
-    const formattedOrders = orders.map(order => ({
+    // Format response
+    const formattedOrders = result.rows.map((order: any) => ({
       id: order.hubrise_order_id,
       localId: order.id,
       platform: order.platform_source,
@@ -85,7 +63,7 @@ export async function GET(req: NextRequest) {
         tax: centsToPounds(order.total_cents_tax),
         currency: order.currency,
       },
-      items: parseItems(order.items),
+      items: order.items || [], // JSONB array
       timestamps: {
         created: order.order_created_at,
         updated: order.order_updated_at,
@@ -93,20 +71,12 @@ export async function GET(req: NextRequest) {
     }));
 
     // Get total count
-    let countQuery = 'SELECT COUNT(*) as count FROM orders WHERE user_id = ?';
-    const countParams: any[] = [session.user.id];
+    let countQuery = `SELECT COUNT(*) as count FROM orders WHERE user_id = ${session.user.id}`;
+    if (status) countQuery += ` AND status = ${status}`;
+    if (platform) countQuery += ` AND platform_source = ${platform}`;
 
-    if (status) {
-      countQuery += ' AND status = ?';
-      countParams.push(status);
-    }
-
-    if (platform) {
-      countQuery += ' AND platform_source = ?';
-      countParams.push(platform);
-    }
-
-    const { count } = db.prepare(countQuery).get(...countParams) as { count: number };
+    const countResult = await sql.query(countQuery);
+    const count = parseInt(countResult.rows[0].count);
 
     return NextResponse.json({
       orders: formattedOrders,

@@ -1,17 +1,17 @@
 /**
- * HubRise OAuth - Callback Handler
+ * HubRise OAuth - Callback Handler (Vercel Postgres)
  * Handles OAuth callback and stores connection in database
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from '@/lib/auth';
-import { getDb } from '@/lib/db';
+import { auth } from '@/lib/auth';
+import { sql } from '@vercel/postgres';
 import { getHubRiseClient } from '@/lib/hubrise-client';
 
 export async function GET(req: NextRequest) {
   try {
     // Check session
-    const session = await getServerSession();
+    const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.redirect(
         new URL('/login?error=hubrise_auth_failed', req.url)
@@ -48,54 +48,43 @@ export async function GET(req: NextRequest) {
     );
 
     // Calculate token expiry
-    const expiresAt = new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + tokenResponse.expires_in * 1000);
 
     // Store in database
-    const db = getDb();
+    const userId = session.user.id;
 
     // Check if connection already exists
-    const existing = db.prepare(
-      'SELECT id FROM hubrise_connections WHERE user_id = ? AND location_id = ?'
-    ).get(session.user.id, tokenResponse.location_id);
+    const existing = await sql`
+      SELECT id FROM hubrise_connections
+      WHERE user_id = ${userId} AND location_id = ${tokenResponse.location_id}
+    `;
 
-    if (existing) {
+    if (existing.rowCount > 0) {
       // Update existing connection
-      db.prepare(`
+      await sql`
         UPDATE hubrise_connections
-        SET access_token = ?,
-            refresh_token = ?,
-            expires_at = ?,
-            location_name = ?,
-            is_active = 1,
-            updated_at = datetime('now')
-        WHERE user_id = ? AND location_id = ?
-      `).run(
-        tokenResponse.access_token,
-        tokenResponse.refresh_token,
-        expiresAt,
-        location.name,
-        session.user.id,
-        tokenResponse.location_id
-      );
+        SET access_token = ${tokenResponse.access_token},
+            refresh_token = ${tokenResponse.refresh_token},
+            expires_at = ${expiresAt.toISOString()},
+            location_name = ${location.name},
+            is_active = true,
+            updated_at = NOW()
+        WHERE user_id = ${userId} AND location_id = ${tokenResponse.location_id}
+      `;
     } else {
       // Insert new connection
-      db.prepare(`
+      await sql`
         INSERT INTO hubrise_connections
         (user_id, location_id, location_name, access_token, refresh_token, expires_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      `).run(
-        session.user.id,
-        tokenResponse.location_id,
-        location.name,
-        tokenResponse.access_token,
-        tokenResponse.refresh_token,
-        expiresAt
-      );
+        VALUES (${userId}, ${tokenResponse.location_id}, ${location.name},
+                ${tokenResponse.access_token}, ${tokenResponse.refresh_token}, ${expiresAt.toISOString()}, NOW(), NOW())
+      `;
     }
 
     // Setup webhook
     try {
-      const webhookUrl = `${process.env.NEXT_PUBLIC_BASE_URL || req.nextUrl.origin}/api/hubrise/webhook`;
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || req.nextUrl.origin;
+      const webhookUrl = `${baseUrl}/api/hubrise/webhook`;
       await hubRiseClient.setupWebhook(
         tokenResponse.location_id,
         tokenResponse.access_token,

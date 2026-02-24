@@ -1,11 +1,11 @@
 /**
- * HubRise Webhook Receiver
+ * HubRise Webhook Receiver (Vercel Postgres)
  * Handles order.create and order.update events from HubRise
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
-import { normalizeOrder, extractCustomer, detectPlatform } from '@/lib/order-normalizer';
+import { sql } from '@vercel/postgres';
+import { detectPlatform } from '@/lib/order-normalizer';
 
 interface HubRiseWebhookPayload {
   event_type: 'order.create' | 'order.update';
@@ -40,6 +40,18 @@ interface HubRiseWebhookPayload {
   timestamp: string;
 }
 
+function normalizePhoneNumber(phone: string): string {
+  if (!phone) return '';
+  let cleaned = phone.replace(/\D/g, '');
+  if (cleaned.startsWith('0')) {
+    cleaned = '44' + cleaned.substring(1);
+  }
+  if (!cleaned.startsWith('44')) {
+    cleaned = '44' + cleaned;
+  }
+  return '+' + cleaned;
+}
+
 export async function POST(req: NextRequest) {
   try {
     // Parse webhook payload
@@ -54,153 +66,95 @@ export async function POST(req: NextRequest) {
     const order = data.order;
 
     // Find user_id from location_id
-    const db = getDb();
-    const connection = db.prepare(`
+    const connectionResult = await sql`
       SELECT user_id, access_token
       FROM hubrise_connections
-      WHERE location_id = ? AND is_active = 1
+      WHERE location_id = ${location_id} AND is_active = true
       LIMIT 1
-    `).get(location_id) as { user_id: string; access_token: string } | undefined;
+    `;
 
-    if (!connection) {
+    if (connectionResult.rowCount === 0) {
       console.error(`No active connection found for location: ${location_id}`);
       return NextResponse.json({ received: true }, { status: 200 });
     }
 
+    const connection = connectionResult.rows[0];
     const userId = connection.user_id;
 
     if (event_type === 'order.create') {
       // Check for duplicate order
-      const existing = db.prepare(`
-        SELECT id FROM orders WHERE hubrise_order_id = ?
-      `).get(order.id);
+      const existingOrder = await sql`
+        SELECT id FROM orders WHERE hubrise_order_id = ${order.id}
+      `;
 
-      if (existing) {
+      if (existingOrder.rowCount > 0) {
         console.log(`Order ${order.id} already exists, skipping`);
         return NextResponse.json({ received: true, duplicate: true }, { status: 200 });
       }
 
-      // Normalize order
-      const normalizedOrder = normalizeOrder(
-        {
-          id: order.id,
-          status: order.status,
-          customer: order.customer || {},
-          total_price: order.total_price,
-          total_tax: order.total_tax || 0,
-          currency: order.currency || 'GBP',
-          items: order.items || [],
-          created_at: order.created_at,
-          updated_at: order.updated_at || order.created_at,
-          service_type_ref: order.service_type_ref || '',
-        },
-        userId,
-        location_id
-      );
+      // Normalize phone
+      const customerPhone = normalizePhoneNumber(order.customer?.phone_number || '');
+      const platformSource = detectPlatform(order.service_type_ref || '');
+      const totalCents = Math.round(order.total_price * 100);
+      const totalCentsTax = Math.round((order.total_tax || 0) * 100);
 
       // Insert order into database
-      db.prepare(`
+      await sql`
         INSERT INTO orders
         (hubrise_order_id, user_id, location_id, platform_source, status,
          customer_name, customer_phone, customer_address, customer_postcode, customer_city,
-         total_cents, total_cents_tax, currency, items, order_created_at, order_updated_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      `).run(
-        normalizedOrder.hubrise_order_id,
-        normalizedOrder.user_id,
-        normalizedOrder.location_id,
-        normalizedOrder.platform_source,
-        normalizedOrder.status,
-        normalizedOrder.customer_name,
-        normalizedOrder.customer_phone,
-        normalizedOrder.customer_address,
-        normalizedOrder.customer_postcode,
-        normalizedOrder.customer_city,
-        normalizedOrder.total_cents,
-        normalizedOrder.total_cents_tax,
-        normalizedOrder.currency,
-        normalizedOrder.items,
-        normalizedOrder.order_created_at,
-        normalizedOrder.order_updated_at
-      );
-
-      // Extract customer data
-      const customerData = extractCustomer(
-        {
-          id: order.id,
-          status: order.status,
-          customer: order.customer || {},
-          total_price: order.total_price,
-          total_tax: order.total_tax || 0,
-          currency: order.currency || 'GBP',
-          items: order.items || [],
-          created_at: order.created_at,
-          updated_at: order.updated_at || order.created_at,
-          service_type_ref: order.service_type_ref || '',
-        },
-        userId
-      );
+         total_cents, total_cents_tax, currency, items, order_created_at, order_updated_at)
+        VALUES (${order.id}, ${userId}, ${location_id}, ${platformSource}, ${order.status},
+                ${order.customer?.name || ''}, ${customerPhone},
+                ${order.customer?.address?.street || ''}, ${order.customer?.address?.postcode || ''}, ${order.customer?.address?.city || ''},
+                ${totalCents}, ${totalCentsTax}, ${order.currency || 'GBP'},
+                ${JSON.stringify(order.items || [])}::jsonb,
+                ${order.created_at}::timestamp with time zone,
+                ${(order.updated_at || order.created_at)}::timestamp with time zone)
+      `;
 
       // Upsert customer
-      const existingCustomer = db.prepare(`
+      const existingCustomer = await sql`
         SELECT id, total_orders, total_spent_cents
         FROM customers
-        WHERE user_id = ? AND phone = ?
-      `).get(userId, customerData.phone) as {
-        id: number;
-        total_orders: number;
-        total_spent_cents: number;
-      } | undefined;
+        WHERE user_id = ${userId} AND phone = ${customerPhone}
+      `;
 
-      if (existingCustomer) {
+      if (existingCustomer.rowCount > 0) {
+        const cust = existingCustomer.rows[0];
         // Update existing customer
-        db.prepare(`
+        await sql`
           UPDATE customers
-          SET name = ?,
-              address = ?,
-              postcode = ?,
-              city = ?,
+          SET name = COALESCE(${order.customer?.name || ''}, name),
+              address = COALESCE(${order.customer?.address?.street || ''}, address),
+              postcode = COALESCE(${order.customer?.address?.postcode || ''}, postcode),
+              city = COALESCE(${order.customer?.address?.city || ''}, city),
               total_orders = total_orders + 1,
-              total_spent_cents = total_spent_cents + ?,
-              last_order_date = ?,
-              updated_at = datetime('now')
-          WHERE id = ?
-        `).run(
-          customerData.name || existingCustomer.name,
-          customerData.address || existingCustomer.address,
-          customerData.postcode || existingCustomer.postcode,
-          customerData.city || existingCustomer.city,
-          normalizedOrder.total_cents,
-          order.created_at,
-          existingCustomer.id
-        );
+              total_spent_cents = total_spent_cents + ${totalCents},
+              last_order_date = ${order.created_at}::timestamp with time zone,
+              updated_at = NOW()
+          WHERE id = ${cust.id}
+        `;
       } else {
         // Insert new customer
-        db.prepare(`
+        await sql`
           INSERT INTO customers
           (user_id, phone, name, address, postcode, city, total_orders, total_spent_cents, last_order_date, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, datetime('now'), datetime('now'))
-        `).run(
-          userId,
-          customerData.phone,
-          customerData.name,
-          customerData.address,
-          customerData.postcode,
-          customerData.city,
-          normalizedOrder.total_cents,
-          order.created_at
-        );
+          VALUES (${userId}, ${customerPhone}, ${order.customer?.name || ''},
+                  ${order.customer?.address?.street || ''}, ${order.customer?.address?.postcode || ''}, ${order.customer?.address?.city || ''},
+                  1, ${totalCents}, ${order.created_at}::timestamp with time zone, NOW(), NOW())
+        `;
       }
 
       console.log(`Order ${order.id} created successfully`);
     } else if (event_type === 'order.update') {
       // Update existing order status
-      db.prepare(`
+      await sql`
         UPDATE orders
-        SET status = ?,
-            order_updated_at = ?
-        WHERE hubrise_order_id = ?
-      `).run(order.status, order.updated_at || new Date().toISOString(), order.id);
+        SET status = ${order.status},
+            order_updated_at = ${(order.updated_at || new Date().toISOString())}::timestamp with time zone
+        WHERE hubrise_order_id = ${order.id}
+      `;
 
       console.log(`Order ${order.id} status updated to ${order.status}`);
     }
